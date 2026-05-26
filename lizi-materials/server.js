@@ -10,9 +10,9 @@ const PORT = process.env.PORT || 3000;
 
 // R2 Configuration
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || 'ae5c20bd97e1d547c9913ad516ece101';
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '4f20817a0f6329cacf4a5c4eda00fee7';
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '72729d18b6e432a0862329ff6300e56540217f4a4d98837705e2f2e53d422dc3';
-const R2_BUCKET = process.env.R2_BUCKET || 'hiubaby';
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '0f358a57deb0de1f5513ddff3870fa8b';
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || 'ed9df48853677e8e7533a9c1fec821598b45e3ca9afb5a0aabfa46c9da451952';
+const R2_BUCKET = process.env.R2_BUCKET || 'lizi-sucai';
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-3f0122397fcb4559b8be753ba492c857.r2.dev';
 const R2_MATERIAL_PREFIX = process.env.R2_MATERIAL_PREFIX || 'lizi-sucai/';
 
