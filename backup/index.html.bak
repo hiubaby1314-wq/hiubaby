@@ -576,7 +576,13 @@
         });
         const d = await r.json();
         if (!d.ok) {
-          alert(d.error || '下载失败');
+          if (d.error === 'mobile_only') {
+            alert(d.error_msg);
+          } else if (d.error === 'device_mismatch') {
+            alert(d.error_msg);
+          } else {
+            alert(d.error || '下载失败');
+          }
           if (btnEl) { btnEl.disabled = false; btnEl.textContent = '⬇ 下载素材'; }
           return;
         }
@@ -933,7 +939,7 @@
       if (!d.ok) { list.innerHTML = '<span style="color:red">加载失败</span>'; return; }
       list.innerHTML = '<div style="margin-top:12px;font-weight:500">用户列表：</div>' +
         d.users.map(u => '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid #e5e7eb;border-radius:4px;margin-top:4px"><span>'+u.username+' <span style="color:#6b7280;font-size:11px">('+u.role+')</span></span>' +
-        (u.username !== 'admin' ? '<button onclick="handleDeleteUser(\''+u.username+'\')" style="background:#ef4444;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px">删除</button>' : '<span style="font-size:11px;color:#6b7280">管理员</span>') + '</div>').join('');
+        (u.username !== 'admin' ? '<button onclick="handleUnbindUser(\''+u.username+'\')" style="background:#f59e0b;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px;margin-right:4px">解绑</button><button onclick="handleDeleteUser(\''+u.username+'\')" style="background:#ef4444;color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:12px">删除</button>' : '<span style="font-size:11px;color:#6b7280">管理员</span>') + '</div>').join('');
     }
 
     async function renderRequests() {
@@ -1268,36 +1274,43 @@
       }
       files.innerHTML = '';
 
-      // Download section - only for logged-in users
-      if (!currentUser) {
-        dlArea.innerHTML = '<div class="locked-msg">请登录后下载素材 <button onclick="closePreview();openLogin()" style="background:none;border:none;color:#10b981;cursor:pointer;font-size:13px;margin-left:8px">立即登录</button></div>';
-      } else {
-        const role = currentUser.role;
-        let canDl = false;
-        let lockText = '';
-        if (role === 'admin' || role === 'vip') canDl = true;
-        else if (role === 'promo' && m.cat === '限时优惠') canDl = true;
-        else if (role === 'user' && m.cat === '表情包') canDl = true;
-        else if (role === 'user') lockText = '仅限表情包（升级后可下载全部素材）';
-        else if (role === 'promo') lockText = '仅限限时优惠（升级后可下载全部）';
-
-        if (canDl) {
-          const uploadedFiles = (m.uploadedFiles || []).filter(f => f.ext === '.fla');
-          let filesHtml = '';
-          if (uploadedFiles.length > 0) {
-            filesHtml = '<div class="download-files-list">' +
-              uploadedFiles.map((f, i) => '<a class="dl-file-btn" href="'+f.path+'" download="'+f.name+'" onclick="event.stopPropagation()">⬇ FLA文件</a>').join('') +
-            '</div>';
-          } else {
-            filesHtml = '<div style="font-size:12px;color:#9ca3af;margin-bottom:8px">暂无FLA文件</div>';
-          }
-          dlArea.innerHTML = filesHtml +
-            '<button onclick="closePreview();doDownload('+idx+')" style="padding:6px 18px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">下载</button>'+
-            '<div style="margin-top:6px;font-size:12px;color:#9ca3af">已下载 '+((m.downloads||0) > 0 ? m.downloads+'次' : '0次')+'</div>';
+        // Download section - only for logged-in users
+        if (!currentUser) {
+          dlArea.innerHTML = '<div class="locked-msg">请登录后下载素材 <button onclick="closePreview();openLogin()" style="background:none;border:none;color:#10b981;cursor:pointer;font-size:13px;margin-left:8px">立即登录</button></div>';
         } else {
-          dlArea.innerHTML = '<div class="locked-msg">🔒 '+lockText+'</div>';
+          // Mobile check
+          const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile|BlackBerry|webOS/i.test(navigator.userAgent);
+
+          if (isMobileDevice) {
+            dlArea.innerHTML = '<div class="locked-msg">📱 手机端仅支持预览，请使用电脑下载</div>';
+          } else {
+            const role = currentUser.role;
+            let canDl = false;
+            let lockText = '';
+            if (role === 'admin' || role === 'vip') canDl = true;
+            else if (role === 'promo' && m.cat === '限时优惠') canDl = true;
+            else if (role === 'user' && m.cat === '表情包') canDl = true;
+            else if (role === 'user') lockText = '仅限表情包（升级后可下载全部素材）';
+            else if (role === 'promo') lockText = '仅限限时优惠（升级后可下载全部）';
+
+            if (canDl) {
+              const uploadedFiles = (m.uploadedFiles || []).filter(f => f.ext === '.fla');
+              let filesHtml = '';
+              if (uploadedFiles.length > 0) {
+                filesHtml = '<div class="download-files-list">' +
+                  uploadedFiles.map((f, i) => '<a class="dl-file-btn" href="'+f.path+'" download="'+f.name+'" onclick="event.stopPropagation()">⬇ FLA文件</a>').join('') +
+                '</div>';
+              } else {
+                filesHtml = '<div style="font-size:12px;color:#9ca3af;margin-bottom:8px">暂无FLA文件</div>';
+              }
+              dlArea.innerHTML = filesHtml +
+                '<button onclick="closePreview();doDownload('+idx+')" style="padding:6px 18px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">下载</button>'+
+                '<div style="margin-top:6px;font-size:12px;color:#9ca3af">已下载 '+((m.downloads||0) > 0 ? m.downloads+'次' : '0次')+'</div>';
+            } else {
+              dlArea.innerHTML = '<div class="locked-msg">🔒 '+lockText+'</div>';
+            }
+          }
         }
-      }
       document.getElementById('previewOverlay').classList.add('active');
     }
 
@@ -1382,6 +1395,18 @@
       document.getElementById('adminNewUser').value = '';
       renderAdminUsers();
     });
+
+    async function handleUnbindUser(username) {
+      if (!confirm('确定解绑用户 "'+username+'" 的设备绑定？\n解绑后该用户可以在新设备下载素材。')) return;
+      const r = await fetch('/api/unbind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUsername: currentUser.username, username })
+      });
+      const d = await r.json();
+      if (d.ok) renderAdminUsers();
+      else alert(d.error);
+    }
 
     async function handleDeleteUser(username) {
       if (!confirm('确定删除用户 "'+username+'"？')) return;

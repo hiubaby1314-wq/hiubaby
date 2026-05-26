@@ -31,6 +31,8 @@ function initDB() {
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'user',
       force_pwd_change INTEGER DEFAULT 1,
+      bound_device_id TEXT DEFAULT NULL,
+      bound_at DATETIME DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS materials (
@@ -91,6 +93,8 @@ function initDB() {
   try { db.exec('ALTER TABLE materials ADD COLUMN downloads INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE materials ADD COLUMN gradient INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE materials ADD COLUMN badges TEXT DEFAULT \'["版权","new"]\''); } catch(e) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN bound_device_id TEXT DEFAULT NULL'); } catch(e) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN bound_at DATETIME DEFAULT NULL'); } catch(e) {}
 
   // Create admin user if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -152,6 +156,18 @@ async function deleteFromR2(url) {
   } catch(e) {
     console.error('R2 delete error:', e.message, 'key:', key);
   }
+}
+
+// === Device Detection ===
+function getDeviceFingerprint(req) {
+  const ua = req.headers['user-agent'] || '';
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  return crypto.createHash('md5').update(ua + ip).digest('hex');
+}
+
+function isMobile(req) {
+  const ua = req.headers['user-agent'] || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile|BlackBerry|webOS/i.test(ua);
 }
 
 // === Middleware ===
@@ -367,6 +383,11 @@ app.post('/api/download', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return res.json({ ok: false, error: '请先登录' });
 
+  // Check if request is from mobile
+  if (isMobile(req)) {
+    return res.json({ ok: false, error: 'mobile_only', error_msg: '手机端仅支持预览素材，请使用电脑下载' });
+  }
+
   const materials = getAllMaterials();
   const material = materials[materialIndex];
   if (!material) return res.json({ ok: false, error: '素材不存在' });
@@ -378,10 +399,53 @@ app.post('/api/download', (req, res) => {
 
   if (!canDl) return res.json({ ok: false, error: '权限不足，无法下载此素材' });
 
+  // Device binding check
+  const deviceId = getDeviceFingerprint(req);
+  const now = new Date().toISOString();
+
+  if (user.bound_device_id) {
+    // Already bound to a device
+    if (user.bound_device_id !== deviceId) {
+      return res.json({
+        ok: false,
+        error: 'device_mismatch',
+        error_msg: '此账号已绑定到其他设备，请使用首次下载的设备访问'
+      });
+    }
+  } else {
+    // First download - bind this device
+    db.prepare('UPDATE users SET bound_device_id = ?, bound_at = ? WHERE username = ?')
+      .run(deviceId, now, username);
+  }
+
   // Increment download count
   db.prepare('UPDATE materials SET downloads = downloads + 1 WHERE id = ?').run(material.id);
 
   res.json({ ok: true, material: getMaterialWithFiles(material.id) });
+});
+
+// === Unbind device (admin only) ===
+app.post('/api/unbind', (req, res) => {
+  const { adminUsername, username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
+
+  db.prepare('UPDATE users SET bound_device_id = NULL, bound_at = NULL WHERE username = ?').run(username);
+  res.json({ ok: true });
+});
+
+// === Get user device info ===
+app.get('/api/device', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(req.query.username);
+  if (!user) return res.json({ ok: false, error: '用户不存在' });
+  res.json({
+    ok: true,
+    bound: !!user.bound_device_id,
+    bound_at: user.bound_at,
+    is_mobile: isMobile(req),
+    device_id: getDeviceFingerprint(req),
+    current_device_match: user.bound_device_id ? (user.bound_device_id === getDeviceFingerprint(req)) : null
+  });
 });
 
 // === Requests ===
