@@ -299,7 +299,7 @@ app.put('/api/materials/:id', (req, res) => {
 });
 
 // Delete material
-app.delete('/api/materials/:id', (req, res) => {
+app.delete('/api/materials/:id', async (req, res) => {
   const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -308,9 +308,10 @@ app.delete('/api/materials/:id', (req, res) => {
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (material) {
     const files = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(materialId);
-    files.forEach(f => {
-      if (f.path && f.path.startsWith('http')) deleteFromR2(f.path);
-    });
+    // Wait for all R2 deletions to complete
+    await Promise.all(files.map(f => {
+      if (f.path && f.path.startsWith('http')) return deleteFromR2(f.path);
+    }));
     db.prepare('DELETE FROM material_files WHERE material_id = ?').run(materialId);
     db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
   }
