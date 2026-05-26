@@ -12,12 +12,13 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
 const USE_R2 = !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+const DB_KEY = 'lizi.db';
+const DB_PATH = path.join(__dirname, 'data', 'lizi.db');
+let db;
 
 // === Database ===
-let db;
 function initDB() {
   const sqlite3 = require('better-sqlite3');
-  const DB_PATH = process.env.DATABASE_URL || path.join(__dirname, 'data', 'lizi.db');
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = sqlite3(DB_PATH);
   db.pragma('journal_mode = WAL');
@@ -104,7 +105,7 @@ let s3Client = null;
 
 async function initR2() {
   if (!USE_R2) { console.log('R2 not configured. Using local disk.'); return; }
-  const { S3Client, PutObjectCommand, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+  const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
   s3Client = {
     client: new S3Client({
       region: 'auto',
@@ -112,9 +113,23 @@ async function initR2() {
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY }
     }),
     PutObjectCommand,
-    DeleteObjectCommand
+    DeleteObjectCommand,
+    GetObjectCommand
   };
   console.log('R2 storage configured.');
+}
+
+async function downloadFromR2(key) {
+  if (!s3Client) return null;
+  try {
+    const res = await s3Client.client.send(new s3Client.GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    const buffer = Buffer.from(await res.Body.transformToByteArray());
+    return buffer;
+  } catch(e) {
+    if (e.name === 'NoSuchKey') return null;
+    console.error('R2 download error:', e.message);
+    return null;
+  }
 }
 
 async function uploadToR2(key, buffer, contentType) {
@@ -446,9 +461,45 @@ app.get('/api/bindings/all', (req, res) => {
 });
 
 // === Start ===
+async function uploadDB() {
+  if (!s3Client || !db) return;
+  try {
+    // Checkpoint WAL to main file before upload
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    const buffer = fs.readFileSync(DB_PATH);
+    await s3Client.client.send(new s3Client.PutObjectCommand({
+      Bucket: R2_BUCKET, Key: DB_KEY, Body: buffer, ContentType: 'application/octet-stream'
+    }));
+    console.log('DB synced to R2');
+  } catch(e) {
+    console.error('DB upload to R2 failed:', e.message);
+  }
+}
+
+async function setupDBSync() {
+  if (USE_R2) {
+    console.log('Checking for DB in R2...');
+    const dbBuffer = await downloadFromR2(DB_KEY);
+    if (dbBuffer) {
+      fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+      fs.writeFileSync(DB_PATH, dbBuffer);
+      console.log('DB restored from R2 (' + dbBuffer.length + ' bytes)');
+    } else {
+      console.log('No DB found in R2, will create new');
+    }
+  }
+  initDB();
+  // Auto-save every 60 seconds
+  if (USE_R2) {
+    setInterval(() => {
+      uploadDB().catch(e => console.error('Auto-save failed:', e.message));
+    }, 60000);
+  }
+}
+
 async function main() {
   await initR2();
-  initDB();
+  await setupDBSync();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`栗子素材网 running on http://0.0.0.0:${PORT} | R2: ${USE_R2 ? 'enabled' : 'disabled'}`);
   });
