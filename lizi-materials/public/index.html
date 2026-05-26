@@ -1485,10 +1485,23 @@
     }
 
     // API for adding material with files
-    async function apiAddMaterialWithFiles(formData) {
+    async function apiAddMaterialWithFiles(formData, skipConfirm) {
       const r = await fetch('/api/materials', { method:'POST', body: formData });
       const d = await r.json();
       if (d.ok) { materials = d.materials; renderCards(); }
+      else if (d.error === 'duplicate' && !skipConfirm) {
+        const name = d.duplicateName;
+        const confirmed = confirm('素材名称「' + name + '」已存在，是否覆盖现有素材？\n\n点击"确定"覆盖现有素材（旧文件将被删除）\n点击"取消"取消此次上传');
+        if (confirmed) {
+          formData.append('overwrite', 'true');
+          const r2 = await fetch('/api/materials', { method:'POST', body: formData });
+          const d2 = await r2.json();
+          if (d2.ok) { materials = d2.materials; renderCards(); }
+          else { alert('上传失败: ' + (d2.error || '未知错误')); }
+          return d2;
+        }
+        return { ok: false, error: 'cancelled' };
+      }
       return d;
     }
 
@@ -1570,31 +1583,51 @@
       const total = Object.keys(groups).length;
       let success = 0;
       let fail = 0;
+      let skipped = 0;
+      let renamed = 0;
       const errors = [];
 
       for (const [name, files] of Object.entries(groups)) {
         try {
+          let finalName = toSimplified(name);
           const formData = new FormData();
           formData.append('username', currentUser.username);
-          formData.append('name', toSimplified(name));
           formData.append('cat', cat);
           formData.append('badges', badges.join(','));
           files.forEach(f => formData.append('files', f.file));
 
+          // First try to upload
+          formData.append('name', finalName);
           const r = await fetch('/api/materials', { method: 'POST', body: formData });
           const d = await r.json();
-          if (d.ok) { success++; }
-          else { fail++; errors.push(name + ': ' + d.error); }
+          
+          if (d.ok) { 
+            success++; 
+          } else if (d.error === 'duplicate') {
+            // Auto-rename duplicate by appending a random suffix
+            renamed++;
+            const suffix = '_' + Math.round(Math.random() * 1000);
+            formData.set('name', finalName + suffix);
+            const r2 = await fetch('/api/materials', { method: 'POST', body: formData });
+            const d2 = await r2.json();
+            if (d2.ok) { success++; }
+            else { fail++; errors.push(name + ': ' + d2.error); }
+          } else { 
+            fail++; errors.push(name + ': ' + d.error); 
+          }
         } catch(e) {
           fail++;
           errors.push(name + ': 網絡錯誤');
         }
         // Update progress
-        this.textContent = '上傳中... ' + (success + fail) + '/' + total;
+        this.textContent = '上傳中... ' + (success + fail + renamed) + '/' + total;
       }
 
       if (success > 0) {
-        document.getElementById('batchMsg').textContent = '成功上傳 ' + success + ' 個素材' + (fail > 0 ? '，' + fail + ' 個失敗' : '');
+        let msg = '成功上傳 ' + success + ' 個素材';
+        if (renamed > 0) msg += '（其中 ' + renamed + ' 個名稱重複已自動改名）';
+        if (fail > 0) msg += '，' + fail + ' 個失敗';
+        document.getElementById('batchMsg').textContent = msg;
         document.getElementById('batchMsg').className = 'modal-msg';
         materials = (await fetch('/api/materials').then(r => r.json())).materials;
         renderCards();

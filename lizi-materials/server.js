@@ -243,10 +243,24 @@ app.get('/api/materials', (req, res) => {
 
 // Add material with file uploads
 app.post('/api/materials', upload.array('files', 20), async (req, res) => {
-  const { username, name, cat, badges, gradient } = req.body;
+  const { username, name, cat, badges, gradient, overwrite } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   if (!name) return res.json({ ok: false, error: '请输入名称' });
+
+  // Check for duplicate name
+  const existing = db.prepare('SELECT * FROM materials WHERE name = ?').get(name);
+  if (existing && !overwrite) {
+    return res.json({ ok: false, error: 'duplicate', duplicateName: name, existingId: existing.id });
+  }
+
+  // If overwrite is true, delete existing material and its files
+  if (existing && overwrite) {
+    const oldFiles = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(existing.id);
+    await Promise.all(oldFiles.map(f => f.path && f.path.startsWith('http') ? deleteFromR2(f.path) : Promise.resolve()));
+    db.prepare('DELETE FROM material_files WHERE material_id = ?').run(existing.id);
+    db.prepare('DELETE FROM materials WHERE id = ?').run(existing.id);
+  }
 
   const matBadges = badges ? badges.split(',').map(s => s.trim()) : ['版权', 'new'];
   const grad = gradient !== undefined ? parseInt(gradient) : Math.floor(Math.random() * 25);
