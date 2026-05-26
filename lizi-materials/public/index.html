@@ -186,6 +186,7 @@
         <span class="user-role" id="userRoleBadge"></span>
       </div>
       <div class="user-actions">
+        <button class="user-action-btn" onclick="openAIGen()" style="background:#111;color:#fff;border-color:#333">🎨 AI 生圖</button>
         <button class="user-action-btn" onclick="openRequestModal()">📩 素材需求</button>
         <button class="user-action-btn admin-notif-btn" id="notifBtn" onclick="openNotifPanel()" style="display:none;position:relative">🔔<span class="notif-badge" id="notifBadge" style="display:none"></span></button>
         <button class="user-action-btn" onclick="openChangePwd()">修改密码</button>
@@ -242,6 +243,15 @@
     .download-files-list .dl-file-btn:hover { background:#059669; }
     .download-files-list .dl-file-btn.disabled { background:#9ca3af; cursor:not-allowed; }
     .req-images { max-height:200px; overflow-y:auto; }
+
+    /* AI Gen Section */
+    .ai-overlay { position:fixed; inset:0; background:#0a0a0a; z-index:2000; display:none; flex-direction:column; }
+    .ai-overlay.active { display:flex; }
+    .ai-header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; background:#111; border-bottom:1px solid #222; }
+    .ai-header-title { color:#fff; font-size:16px; font-weight:600; }
+    .ai-close-btn { padding:6px 16px; background:#333; color:#fff; border:none; border-radius:6px; font-size:13px; cursor:pointer; }
+    .ai-close-btn:hover { background:#444; }
+    .ai-frame { flex:1; border:none; width:100%; }
     </style>
 
     <section class="categories" id="categories">
@@ -289,6 +299,15 @@
       <div class="pagination-btns" id="paginationBtns"></div>
     </section>
   </main>
+
+  <!-- AI Generation Overlay -->
+  <div class="ai-overlay" id="aiOverlay">
+    <div class="ai-header">
+      <span class="ai-header-title">🎨 LUMINA AI 繪圖工作室</span>
+      <button class="ai-close-btn" onclick="closeAIGen()">✕ 返回素材網</button>
+    </div>
+    <iframe class="ai-frame" id="aiFrame" src="https://le5lffu2.mule.page/static/index.html" allow="clipboard-write"></iframe>
+  </div>
 
   <!-- Login Modal -->
   <div class="modal-overlay" id="loginModal">
@@ -1338,6 +1357,14 @@
 
     function closePreview() {
       document.getElementById('previewOverlay').classList.remove('active');
+    }
+
+    // === AI Generation ===
+    function openAIGen() {
+      document.getElementById('aiOverlay').classList.add('active');
+    }
+    function closeAIGen() {
+      document.getElementById('aiOverlay').classList.remove('active');
     }
 
     // ===== EVENT LISTENERS =====
