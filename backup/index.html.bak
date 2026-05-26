@@ -622,16 +622,16 @@
     }
 
     async function apiDeleteMaterial(idx) {
-      if (!currentUser) { alert('请先登录管理员账号'); return; }
+      if (!currentUser) { alert('请先登录管理员账号'); return false; }
       try {
         const r = await fetch('/api/materials/' + idx, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username: currentUser.username }) });
         const d = await r.json();
-        if (d.ok) { materials = d.materials; renderCards(); }
+        if (d.ok) { materials = d.materials; renderCards(); return true; }
         else alert(d.error || '删除失败');
       } catch(e) {
         alert('删除请求失败: ' + e.message);
       }
-      return d;
+      return false;
     }
 
     async function apiAddUser(username, role) {
@@ -799,12 +799,12 @@
         }).join('');
 
         const settingsIcon = (currentUser && currentUser.role === 'admin') ?
-          '<div class="card-settings-wrap"><button class="card-settings-btn" data-settings-idx="'+realIdx+'" onclick="event.stopPropagation();toggleSettings('+realIdx+', this)">⚙</button><div class="card-settings-menu" id="settingsMenu'+realIdx+'" style="display:none">'+
+          '<div class="card-settings-wrap"><button class="card-settings-btn" data-settings-idx="'+m.id+'" onclick="event.stopPropagation();toggleSettingsById('+m.id+', this)">⚙</button><div class="card-settings-menu" id="settingsMenu'+m.id+'" style="display:none">'+
             '<div class="settings-menu-section"><label class="settings-menu-label">標籤</label>'+
             '<div style="display:flex;gap:6px;margin-top:4px">'+
-            '<label style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer"><input type="checkbox" class="badge-toggle" data-idx="'+realIdx+'" data-badge="限时" onchange="event.stopPropagation();toggleBadge('+realIdx+',\'限时\',this.checked)"'+((m.badges||[]).includes('限时')?' checked':'')+'> <span style="color:#92400e;background:#fef3c7;padding:1px 6px;border-radius:3px;font-size:11px">限时</span></label>'+
+            '<label style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer"><input type="checkbox" class="badge-toggle" data-id="'+m.id+'" data-badge="限时" onchange="event.stopPropagation();toggleBadgeById('+m.id+',\'限时\',this.checked)"'+((m.badges||[]).includes('限时')?' checked':'')+'> <span style="color:#92400e;background:#fef3c7;padding:1px 6px;border-radius:3px;font-size:11px">限时</span></label>'+
             '</div></div>'+
-            '<button class="settings-menu-btn delete" onclick="event.stopPropagation();deleteMaterial('+realIdx+')">删除素材</button>'+
+            '<button class="settings-menu-btn delete" onclick="event.stopPropagation();deleteMaterialById('+m.id+')">删除素材</button>'+
           '</div></div>' : '';
 
         // Check if user can download this material
@@ -976,6 +976,35 @@
       menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     }
 
+    // ID-based versions (more robust after sorting)
+    function toggleSettingsById(id, btn) {
+      const menu = document.getElementById('settingsMenu'+id);
+      document.querySelectorAll('.card-settings-menu').forEach(m => {
+        if (m !== menu) m.style.display = 'none';
+      });
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+    function toggleBadgeById(id, badge, checked) {
+      const m = materials.find(x => x.id === id);
+      if (!m) return;
+      if (!m.badges) m.badges = [];
+      if (checked) { if (!m.badges.includes(badge)) m.badges.push(badge); }
+      else { m.badges = m.badges.filter(b => b !== badge); }
+      fetch('/api/materials/'+id, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username: currentUser.username, badges: m.badges }) }).catch(()=>{});
+      renderCards();
+    }
+    function deleteMaterialById(id) {
+      if (!currentUser) { alert('请先登录管理员账号'); return; }
+      const m = materials.find(x => x.id === id);
+      if (!m) { alert('素材不存在'); return; }
+      if (!confirm('确定删除「'+m.name+'」？')) return;
+      fetch('/api/materials/'+id, { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username: currentUser.username }) })
+        .then(r=>r.json()).then(d => {
+          if (d.ok) { materials = d.materials; renderCards(); closeAllSettingsMenus(); }
+          else alert(d.error || '删除失败');
+        }).catch(e => alert('删除请求失败: '+e.message));
+    }
+
     function openEditMaterial(idx) {
       const m = materials[idx];
       document.getElementById('editModalTitle').textContent = '编辑素材';
@@ -998,9 +1027,11 @@
 
     async function deleteMaterial(idx) {
       if (!currentUser) { alert('请先登录管理员账号'); return; }
-      if (!confirm('确定删除此素材？')) return;
+      const m = materials[idx];
+      if (!m) { alert('素材不存在'); return; }
+      if (!confirm('确定删除「'+m.name+'」？')) return;
       try {
-        const r = await fetch('/api/materials/'+idx, {
+        const r = await fetch('/api/materials/'+m.id, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: currentUser.username })
@@ -1177,7 +1208,11 @@
     });
 
     function openEditModal() {
-      document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+      // Close other modals first, then open edit modal
+      document.querySelectorAll('.modal-overlay').forEach(m => {
+        if (m.id !== 'editModal') m.classList.remove('active');
+      });
+      document.getElementById('editModal').classList.add('active');
     }
 
     function openPreview(idx) {
