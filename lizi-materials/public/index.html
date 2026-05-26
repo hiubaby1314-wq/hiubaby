@@ -77,18 +77,6 @@
     .download-btn { padding:6px 20px; background:#10b981; color:#fff; border:none; border-radius:6px; font-size:13px; cursor:pointer; font-weight:500; }
     .download-btn:hover { background:#059669; transform:scale(1.05); }
     .download-btn:disabled { background:#9ca3af; cursor:not-allowed; transform:none; }
-    .card-settings-wrap { position:absolute; top:8px; right:8px; z-index:5; }
-    .card-settings-btn { width:28px; height:28px; border-radius:6px; border:none; cursor:pointer; font-size:16px; background:rgba(255,255,255,0.9); display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
-    .card-settings-btn:hover { background:#fff; transform:rotate(30deg); transition:transform 0.2s; }
-    .card-settings-menu { position:absolute; top:32px; right:0; background:#fff; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.15); border:1px solid #e5e7eb; overflow:hidden; z-index:10; min-width:100px; }
-    .settings-menu-btn { display:block; width:100%; padding:8px 14px; border:none; background:none; font-size:13px; cursor:pointer; text-align:left; color:#374151; }
-    .settings-menu-btn:hover { background:#f3f4f6; }
-    .settings-menu-btn.delete { color:#ef4444; border-top:1px solid #f3f4f6; }
-    .settings-menu-btn.delete:hover { background:#fef2f2; }
-    .settings-menu-section { padding:8px 14px; border-bottom:1px solid #f3f4f6; }
-    .settings-menu-label { font-size:11px; color:#9ca3af; display:block; margin-bottom:4px; }
-    .settings-menu-cat { width:100%; padding:4px 8px; border:1px solid #e5e7eb; border-radius:4px; font-size:13px; background:#f9fafb; cursor:pointer; }
-    .settings-menu-cat:focus { outline:none; border-color:#3b82f6; }
     .bind-item { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#f9fafb; border-radius:6px; margin-bottom:8px; }
     .bind-item .bind-platform { font-weight:600; color:#111827; }
     .bind-item .bind-account { color:#6b7280; margin-left:8px; font-size:13px; }
@@ -823,14 +811,8 @@
           return '<span class="'+cls+'">.'+f+'</span>';
         }).join('');
 
-        const settingsIcon = (currentUser && currentUser.role === 'admin') ?
-          '<div class="card-settings-wrap"><button class="card-settings-btn" data-settings-idx="'+m.id+'" onclick="event.stopPropagation();toggleSettingsById('+m.id+', this)">⚙</button><div class="card-settings-menu" id="settingsMenu'+m.id+'" style="display:none">'+
-            '<div class="settings-menu-section"><label class="settings-menu-label">標籤</label>'+
-            '<div style="display:flex;gap:6px;margin-top:4px">'+
-            '<label style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer"><input type="checkbox" class="badge-toggle" data-id="'+m.id+'" data-badge="限时" onchange="event.stopPropagation();toggleBadgeById('+m.id+',\'限时\',this.checked)"'+((m.badges||[]).includes('限时')?' checked':'')+'> <span style="color:#92400e;background:#fef3c7;padding:1px 6px;border-radius:3px;font-size:11px">限时</span></label>'+
-            '</div></div>'+
-            '<button class="settings-menu-btn delete" onclick="event.stopPropagation();deleteMaterialById('+m.id+')">删除素材</button>'+
-          '</div></div>' : '';
+        // Admin settings removed - no card settings button
+        const settingsIcon = '';
 
         // Check if user can download this material
         let canDownload = false;
