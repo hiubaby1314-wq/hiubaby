@@ -268,6 +268,7 @@
 
     <div class="admin-toolbar" id="adminToolbar" style="display:none">
       <button class="admin-toolbar-btn add-btn" id="addMaterialBtn">+ 新增素材</button>
+      <button class="admin-toolbar-btn add-btn" id="batchAddBtn" style="background:#8b5cf6;border-color:#8b5cf6">📦 批量新增</button>
       <button class="admin-toolbar-btn" id="viewReqBtn" style="background:#f59e0b;color:#fff;border-color:#f59e0b">📩 查看需求</button>
       <button class="admin-toolbar-btn" id="viewBindingsBtn" style="background:#6366f1;color:#fff;border-color:#6366f1">🔗 查看绑定</button>
       <span style="font-size:12px;color:#6b7280;margin-left:auto">管理员新增的素材会永久保存</span>
@@ -397,6 +398,33 @@
       <input type="hidden" id="editIndex" value="">
       <button class="modal-submit" id="editSubmit">保存</button>
       <div class="modal-msg" id="editMsg"></div>
+    </div>
+  </div>
+
+  <!-- Batch Upload Modal -->
+  <div class="modal-overlay" id="batchModal">
+    <div class="modal" style="max-width:600px">
+      <button class="modal-close" data-close="batchModal">&times;</button>
+      <h3>📦 批量新增素材</h3>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
+        選擇多個文件，每個文件會自動成為一個獨立素材。<br>
+        文件名會作為素材名稱。相同文件名的不同格式（如 xxx.png 和 xxx.fla）會合併為同一個素材。
+      </p>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">分類</label><select id="batchCat" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px"><option value="人物">人物</option><option value="表情包">表情包</option><option value="画师寄售">画师寄售</option><option value="背景图">背景图</option><option value="道具栏">道具栏</option><option value="特效">特效</option><option value="限时优惠">限时优惠</option></select></div>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">標籤</label>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeNew" checked> <span style="color:#166534;background:#dcfce7;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">new</span></label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeLimit"> <span style="color:#92400e;background:#fef3c7;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">限时</span></label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeHot"> <span style="color:#dc2626;background:#fee2e2;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">热门</span></label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeVip"> <span style="color:#4f46e5;background:#e0e7ff;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">VIP</span></label>
+        </div>
+      </div>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">選擇文件（支持多選）</label>
+        <input type="file" id="batchFileInput" multiple style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px" onchange="previewBatchFiles(this)">
+        <div id="batchFileList" style="max-height:250px;overflow-y:auto;margin-top:8px"></div>
+      </div>
+      <button class="modal-submit" id="batchSubmit">批量上傳</button>
+      <div class="modal-msg" id="batchMsg"></div>
     </div>
   </div>
 
@@ -1416,6 +1444,10 @@
       if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
       return (bytes/(1024*1024)).toFixed(1) + ' MB';
     }
+    function pathExt(filename) {
+      const idx = filename.lastIndexOf('.');
+      return idx === -1 ? '' : filename.substring(idx);
+    }
 
     // API for adding material with files
     async function apiAddMaterialWithFiles(formData) {
@@ -1448,6 +1480,97 @@
       editSelectedFiles = [];
       renderEditFileList();
       document.getElementById('editModal').classList.add('active');
+    });
+
+    // Batch upload
+    let batchSelectedFiles = [];
+    function previewBatchFiles(input) {
+      batchSelectedFiles = Array.from(input.files);
+      const container = document.getElementById('batchFileList');
+      if (batchSelectedFiles.length === 0) { container.innerHTML = ''; return; }
+      container.innerHTML = batchSelectedFiles.map((f, i) =>
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:#f9fafb;border-radius:4px;margin-bottom:2px;font-size:12px">'+
+          '<span>'+(i+1)+'. '+f.name+'</span><span style="color:#9ca3af">'+formatSize(f.size)+'</span>'+
+        '</div>'
+      ).join('');
+    }
+
+    document.getElementById('batchAddBtn').addEventListener('click', function() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      batchSelectedFiles = [];
+      document.getElementById('batchFileList').innerHTML = '';
+      document.getElementById('batchFileInput').value = '';
+      document.getElementById('batchMsg').textContent = '';
+      document.getElementById('batchMsg').className = 'modal-msg';
+      document.getElementById('batchModal').classList.add('active');
+    });
+
+    document.getElementById('batchSubmit').addEventListener('click', async function() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      if (batchSelectedFiles.length === 0) {
+        document.getElementById('batchMsg').textContent = '請選擇文件';
+        document.getElementById('batchMsg').className = 'modal-msg error';
+        return;
+      }
+
+      this.disabled = true;
+      this.textContent = '上傳中...';
+
+      // Group files by name (without extension)
+      const groups = {};
+      batchSelectedFiles.forEach(f => {
+        const nameWithoutExt = f.name.replace(/\.[^.]+$/, '');
+        const ext = pathExt(f.name);
+        if (!groups[nameWithoutExt]) groups[nameWithoutExt] = [];
+        groups[nameWithoutExt].push({ file: f, ext });
+      });
+
+      const cat = document.getElementById('batchCat').value;
+      const badges = ['版权'];
+      if (document.getElementById('batchBadgeNew').checked) badges.push('new');
+      if (document.getElementById('batchBadgeLimit').checked) badges.push('限时');
+      if (document.getElementById('batchBadgeHot').checked) badges.push('热门');
+      if (document.getElementById('batchBadgeVip').checked) badges.push('VIP');
+
+      const total = Object.keys(groups).length;
+      let success = 0;
+      let fail = 0;
+      const errors = [];
+
+      for (const [name, files] of Object.entries(groups)) {
+        try {
+          const formData = new FormData();
+          formData.append('username', currentUser.username);
+          formData.append('name', toSimplified(name));
+          formData.append('cat', cat);
+          formData.append('badges', badges.join(','));
+          files.forEach(f => formData.append('files', f.file));
+
+          const r = await fetch('/api/materials', { method: 'POST', body: formData });
+          const d = await r.json();
+          if (d.ok) { success++; }
+          else { fail++; errors.push(name + ': ' + d.error); }
+        } catch(e) {
+          fail++;
+          errors.push(name + ': 網絡錯誤');
+        }
+        // Update progress
+        this.textContent = '上傳中... ' + (success + fail) + '/' + total;
+      }
+
+      if (success > 0) {
+        document.getElementById('batchMsg').textContent = '成功上傳 ' + success + ' 個素材' + (fail > 0 ? '，' + fail + ' 個失敗' : '');
+        document.getElementById('batchMsg').className = 'modal-msg';
+        materials = (await fetch('/api/materials').then(r => r.json())).materials;
+        renderCards();
+        setTimeout(() => { document.getElementById('batchModal').classList.remove('active'); }, 1500);
+      } else {
+        document.getElementById('batchMsg').textContent = '上傳失敗：' + errors.join('; ');
+        document.getElementById('batchMsg').className = 'modal-msg error';
+      }
+
+      this.disabled = false;
+      this.textContent = '批量上傳';
     });
 
     // Edit mode toggle
