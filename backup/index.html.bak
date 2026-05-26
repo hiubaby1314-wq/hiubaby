@@ -77,10 +77,10 @@
     .download-btn { padding:6px 20px; background:#10b981; color:#fff; border:none; border-radius:6px; font-size:13px; cursor:pointer; font-weight:500; }
     .download-btn:hover { background:#059669; transform:scale(1.05); }
     .download-btn:disabled { background:#9ca3af; cursor:not-allowed; transform:none; }
-    .card-settings-wrap { position:absolute; top:8px; right:8px; z-index:5; }
+    .card-settings-wrap { position:absolute; bottom:8px; right:8px; z-index:5; }
     .card-settings-btn { width:28px; height:28px; border-radius:6px; border:none; cursor:pointer; font-size:16px; background:rgba(255,255,255,0.9); display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
     .card-settings-btn:hover { background:#fff; transform:rotate(30deg); transition:transform 0.2s; }
-    .card-settings-menu { position:absolute; top:32px; right:0; background:#fff; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.15); border:1px solid #e5e7eb; overflow:hidden; z-index:10; min-width:100px; }
+    .card-settings-menu { position:absolute; bottom:32px; right:0; background:#fff; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.15); border:1px solid #e5e7eb; overflow:hidden; z-index:10; min-width:100px; }
     .settings-menu-btn { display:block; width:100%; padding:8px 14px; border:none; background:none; font-size:13px; cursor:pointer; text-align:left; color:#374151; }
     .settings-menu-btn:hover { background:#f3f4f6; }
     .settings-menu-btn.delete { color:#ef4444; border-top:1px solid #f3f4f6; }
@@ -186,6 +186,7 @@
         <span class="user-role" id="userRoleBadge"></span>
       </div>
       <div class="user-actions">
+        <button class="user-action-btn" onclick="openAIGen()" style="background:#111;color:#fff;border-color:#333">🎨 AI 生圖</button>
         <button class="user-action-btn" onclick="openRequestModal()">📩 素材需求</button>
         <button class="user-action-btn admin-notif-btn" id="notifBtn" onclick="openNotifPanel()" style="display:none;position:relative">🔔<span class="notif-badge" id="notifBadge" style="display:none"></span></button>
         <button class="user-action-btn" onclick="openChangePwd()">修改密码</button>
@@ -242,6 +243,15 @@
     .download-files-list .dl-file-btn:hover { background:#059669; }
     .download-files-list .dl-file-btn.disabled { background:#9ca3af; cursor:not-allowed; }
     .req-images { max-height:200px; overflow-y:auto; }
+
+    /* AI Gen Section */
+    .ai-overlay { position:fixed; inset:0; background:#0a0a0a; z-index:2000; display:none; flex-direction:column; }
+    .ai-overlay.active { display:flex; }
+    .ai-header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; background:#111; border-bottom:1px solid #222; }
+    .ai-header-title { color:#fff; font-size:16px; font-weight:600; }
+    .ai-close-btn { padding:6px 16px; background:#333; color:#fff; border:none; border-radius:6px; font-size:13px; cursor:pointer; }
+    .ai-close-btn:hover { background:#444; }
+    .ai-frame { flex:1; border:none; width:100%; }
     </style>
 
     <section class="categories" id="categories">
@@ -289,6 +299,15 @@
       <div class="pagination-btns" id="paginationBtns"></div>
     </section>
   </main>
+
+  <!-- AI Generation Overlay -->
+  <div class="ai-overlay" id="aiOverlay">
+    <div class="ai-header">
+      <span class="ai-header-title">🎨 LUMINA AI 繪圖工作室</span>
+      <button class="ai-close-btn" onclick="closeAIGen()">✕ 返回素材網</button>
+    </div>
+    <iframe class="ai-frame" id="aiFrame" src="https://le5lffu2.mule.page/static/index.html" allow="clipboard-write"></iframe>
+  </div>
 
   <!-- Login Modal -->
   <div class="modal-overlay" id="loginModal">
@@ -823,6 +842,7 @@
           return '<span class="'+cls+'">.'+f+'</span>';
         }).join('');
 
+        // Admin settings
         const settingsIcon = (currentUser && currentUser.role === 'admin') ?
           '<div class="card-settings-wrap"><button class="card-settings-btn" data-settings-idx="'+m.id+'" onclick="event.stopPropagation();toggleSettingsById('+m.id+', this)">⚙</button><div class="card-settings-menu" id="settingsMenu'+m.id+'" style="display:none">'+
             '<div class="settings-menu-section"><label class="settings-menu-label">標籤</label>'+
@@ -1337,6 +1357,14 @@
 
     function closePreview() {
       document.getElementById('previewOverlay').classList.remove('active');
+    }
+
+    // === AI Generation ===
+    function openAIGen() {
+      document.getElementById('aiOverlay').classList.add('active');
+    }
+    function closeAIGen() {
+      document.getElementById('aiOverlay').classList.remove('active');
     }
 
     // ===== EVENT LISTENERS =====
