@@ -95,11 +95,14 @@ async function syncDataFromR2() {
     { r2Key: 'data/bindings.json', localPath: BINDINGS_FILE },
   ];
 
-  console.log('Syncing data from R2...');
   for (const { r2Key, localPath } of dataFiles) {
-    const success = await downloadFromR2(r2Key, localPath);
-    if (!success) {
-      console.log(`No data in R2 for ${r2Key}, will create locally`);
+    if (!fs.existsSync(localPath)) {
+      const success = await downloadFromR2(r2Key, localPath);
+      if (!success) {
+        console.log(`No data in R2 for ${r2Key}, will create locally`);
+      }
+    } else {
+      console.log(`Local file exists, skipping R2 download: ${r2Key}`);
     }
   }
 }
