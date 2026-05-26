@@ -1,3 +1,57 @@
+// === DEFAULT DATA (fallback when DB is empty) ===
+const DEF_CHARS=[
+{id:1,name:'蝴蝶女孩',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#831843,#ec4899,#fbcfe8)',files:['png','fla']},
+{id:3,name:'灰衣',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#374151,#6b7280,#d1d5db)',files:['png','fla']},
+{id:34,name:'新潮妹妹',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#4c1d95,#7c3aed,#1f2937)',files:['png','fla'],imgs:['assets/新潮妹妹.png','assets/新潮妹妹动作.png']},
+{id:35,name:'校服少女',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#312e81,#4338ca,#e0e7ff)',files:['png','fla']},
+{id:36,name:'蓝衣警花',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#1e3a5f,#60a5fa,#1e293b)',files:['png','fla']},
+{id:37,name:'银发学院少年',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#312e81,#6366f1,#c7d2fe)',files:['png','fla']},
+{id:38,name:'紫发街头少年',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#1e1b4b,#7c3aed,#4b5563)',files:['png','fla']},
+{id:39,name:'校服少年',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#1e3a5f,#3b82f6,#6b7280)',files:['png','fla']},
+{id:40,name:'破衣幽魂',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#1c1917,#57534e,#a8a29e)',files:['png','fla']},
+{id:41,name:'卷发编辫少女',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#78716c,#d6d3d1,#292524)',files:['png','fla']},
+{id:42,name:'金发风衣少年',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#a16207,#fde68a,#1e293b)',files:['png','fla']},
+{id:44,name:'泳装少女',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#4b5563,#818cf8,#e0e7ff)',files:['png','fla']},
+{id:45,name:'新潮妹妹表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#1e1b4b,#6366f1,#c7d2fe)',files:['gif','fla'],imgs:['assets/新潮妹妹表情.gif']},
+{id:46,name:'美男表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#9ca3af,#c4b5fd,#e5e7eb)',files:['gif','fla'],imgs:['assets/美男表情.gif']},
+{id:47,name:'手枪',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#1f2937,#d4af37,#f5f5f4)',files:['png','fla']},
+{id:48,name:'手机',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#475569,#94a3b8,#cbd5e1)',files:['png','fla']},
+{id:49,name:'奶茶',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#92400e,#d4a574,#fef3c7)',files:['png','fla']},
+{id:53,name:'吉他',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#1e3a5f,#e2e8f0,#f8fafc)',files:['png','fla']},
+{id:50,name:'Q版魔鬼',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#1c1917,#991b1b,#292524)',files:['png','fla']},
+{id:51,name:'Q版天使',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#fefce8,#eab308,#f5f5f4)',files:['png','fla']},
+{id:52,name:'蓝裙美女',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#1e1b4b,#3b82f6,#f8fafc)',files:['png','fla']},
+{id:54,name:'宝箱',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#1c1917,#92400e,#d97706)',files:['png','fla']},
+{id:55,name:'宝箱2',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#1e3a5f,#2563eb,#38bdf8)',files:['png','fla']},
+{id:56,name:'宝箱3',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#1e1b4b,#7c3aed,#a78bfa)',files:['png','fla']},
+{id:57,name:'发带',isNew:true,cat:'道具栏',grad:'linear-gradient(160deg,#831843,#ec4899,#fbcfe8)',files:['png','fla']},
+{id:58,name:'情侣运动装',isNew:true,cat:'人物',grad:'linear-gradient(160deg,#4c1d95,#7c3aed,#e0e7ff)',files:['png','fla']},
+{id:59,name:'运动女孩单面',isNew:true,limit:true,cat:'人物',grad:'linear-gradient(160deg,#ea580c,#fb923c,#fed7aa)',files:['png','fla']},
+{id:60,name:'斯文妹妹',isNew:true,limit:true,cat:'人物',grad:'linear-gradient(160deg,#0f766e,#14b8a6,#99f6e4)',files:['png','fla']},
+{id:62,name:'国民小哥',isNew:true,limit:true,cat:'人物',grad:'linear-gradient(160deg,#1e40af,#3b82f6,#93c5fd)',files:['png','fla']},
+{id:11,name:'紫发爱心正面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#7c3aed,#c084fc,#f9a8d4)',files:['fla','png'],imgs:['assets/紫髮愛心正面.png']},
+{id:21,name:'紫发爱心侧面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#8b5cf6,#c4b5fd,#ede9fe)',files:['fla','gif'],imgs:['assets/紫髮愛心側.gif']},
+{id:22,name:'紫发爱心正侧',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#6d28d9,#a78bfa,#ddd6fe)',files:['fla','gif'],imgs:['assets/紫髮愛心正側.gif']},
+{id:12,name:'国民哥哥表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#0f766e,#14b8a6,#99f6e4)',files:['fla','gif'],imgs:['assets/國民哥哥表情.gif']},
+{id:13,name:'彩虹表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#f43f5e,#fb923c,#facc15,#4ade80,#38bdf8,#a78bfa)',files:['fla','gif'],imgs:['assets/彩虹表情.gif']},
+{id:14,name:'银发少年正面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#94a3b8,#cbd5e1,#e2e8f0)',files:['fla','png'],imgs:['assets/銀髮少年正面.png']},
+{id:23,name:'银发少年正侧',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#64748b,#94a3b8,#cbd5e1)',files:['fla','png'],imgs:['assets/銀髮少年正側.png']},
+{id:15,name:'眼镜学长',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#78350f,#a16207,#fbbf24)',files:['fla','gif'],imgs:['assets/眼鏡學長.gif']},
+{id:16,name:'猫耳少女正面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#6b21a8,#a78bfa,#e9d5ff)',files:['fla','png'],imgs:['assets/猫耳少女正面.png']},
+{id:19,name:'猫耳少女正侧',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#7c3aed,#c084fc,#ede9fe)',files:['fla','png'],imgs:['assets/猫耳少女正侧.png']},
+{id:20,name:'猫耳少女侧面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#581c87,#9333ea,#d8b4fe)',files:['fla','png'],imgs:['assets/猫耳少女侧面.png']},
+{id:17,name:'趣味男孩正面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#ea580c,#fb923c,#fed7aa)',files:['fla','gif'],imgs:['assets/趣味男孩正面.gif']},
+{id:24,name:'趣味男孩正侧',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#c2410c,#f97316,#fdba74)',files:['gif'],imgs:['assets/趣味男孩正侧.gif']},
+{id:18,name:'帅气少年正面',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#9ca3af,#d1d5db,#f3f4f6)',files:['fla','png'],imgs:['assets/帅气少年正面.png']},
+{id:25,name:'帅气少年正侧',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#6b7280,#9ca3af,#d1d5db)',files:['fla','png'],imgs:['assets/帅气少年正侧.png']},
+{id:26,name:'蓝发兽娘',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#1e3a5f,#2563eb,#f97316)',files:['fla','gif'],imgs:['assets/蓝发兽娘.gif']},
+{id:27,name:'灰眼银发少年',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#6b7280,#9ca3af,#e5e7eb)',files:['fla','gif'],imgs:['assets/灰眼银发少年.gif']},
+{id:28,name:'紫眼银发少年',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#7c3aed,#a78bfa,#e5e7eb)',files:['fla','gif'],imgs:['assets/紫眼银发少年.gif']},
+{id:31,name:'黄眼表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#92400e,#d97706,#fbbf24)',files:['fla','gif'],imgs:['assets/黄眼表情.gif']},
+{id:32,name:'祖红表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#881337,#e11d48,#fda4af)',files:['fla','png'],imgs:['assets/祖红表情.png']},
+{id:33,name:'可爱女表情',isNew:true,cat:'表情包',grad:'linear-gradient(160deg,#7c3aed,#c084fc,#fbcfe8)',files:['fla','png'],imgs:['assets/可爱女表情.png']}
+];
+
 // === I18N: Simplified to Traditional ===
 const S2T={'爱':'愛','宝':'寶','贝':'貝','备':'備','笔':'筆','边':'邊','标':'標','参':'參','产':'產','长':'長','场':'場','厂':'廠','车':'車','尘':'塵','称':'稱','迟':'遲','齿':'齒','冲':'衝','虫':'蟲','丑':'醜','处':'處','传':'傳','创':'創','纯':'純','词':'詞','从':'從','窜':'竄','达':'達','带':'帶','单':'單','当':'當','党':'黨','导':'導','灯':'燈','递':'遞','点':'點','电':'電','东':'東','动':'動','独':'獨','读':'讀','断':'斷','对':'對','队':'隊','夺':'奪','儿':'兒','尔':'爾','发':'發','飞':'飛','丰':'豐','凤':'鳳','复':'復','负':'負','该':'該','盖':'蓋','赶':'趕','个':'個','给':'給','构':'構','购':'購','顾':'顧','观':'觀','广':'廣','归':'歸','国':'國','过':'過','汉':'漢','号':'號','后':'後','华':'華','画':'畫','会':'會','机':'機','积':'積','极':'極','继':'繼','夹':'夾','价':'價','艰':'艱','歼':'殲','监':'監','坚':'堅','拣':'揀','简':'簡','见':'見','键':'鍵','讲':'講','酱':'醬','将':'將','奖':'獎','胶':'膠','阶':'階','节':'節','洁':'潔','尽':'盡','惊':'驚','竞':'競','旧':'舊','举':'舉','剧':'劇','据':'據','卷':'捲','决':'決','绝':'絕','开':'開','壳':'殼','课':'課','块':'塊','扩':'擴','来':'來','蓝':'藍','兰':'蘭','烂':'爛','劳':'勞','乐':'樂','类':'類','礼':'禮','历':'歷','丽':'麗','两':'兩','联':'聯','炼':'煉','练':'練','粮':'糧','疗':'療','猎':'獵','临':'臨','岭':'嶺','刘':'劉','龙':'龍','炉':'爐','乱':'亂','轮':'輪','罗':'羅','马':'馬','买':'買','麦':'麥','蛮':'蠻','满':'滿','们':'們','梦':'夢','庙':'廟','灭':'滅','亩':'畝','脑':'腦','难':'難','鸟':'鳥','农':'農','诺':'諾','欧':'歐','盘':'盤','庞':'龐','赔':'賠','喷':'噴','凭':'憑','苹':'蘋','齐':'齊','启':'啟','岂':'豈','气':'氣','迁':'遷','签':'簽','牵':'牽','浅':'淺','枪':'槍','墙':'牆','庆':'慶','穷':'窮','区':'區','确':'確','让':'讓','扰':'擾','认':'認','荣':'榮','伞':'傘','丧':'喪','伤':'傷','绍':'紹','设':'設','摄':'攝','审':'審','圣':'聖','胜':'勝','实':'實','识':'識','时':'時','势':'勢','适':'適','释':'釋','寿':'壽','书':'書','术':'術','树':'樹','帅':'帥','双':'雙','顺':'順','说':'說','丝':'絲','苏':'蘇','虽':'雖','岁':'歲','孙':'孫','损':'損','台':'臺','态':'態','坛':'壇','叹':'嘆','汤':'湯','体':'體','条':'條','铁':'鐵','厅':'廳','听':'聽','头':'頭','图':'圖','团':'團','托':'託','袜':'襪','万':'萬','网':'網','卫':'衛','为':'為','围':'圍','违':'違','伟':'偉','伪':'偽','温':'溫','稳':'穩','务':'務','雾':'霧','牺':'犧','习':'習','袭':'襲','系':'係','戏':'戲','虾':'蝦','咸':'鹹','贤':'賢','显':'顯','宪':'憲','县':'縣','响':'響','向':'嚮','项':'項','写':'寫','协':'協','谢':'謝','兴':'興','选':'選','悬':'懸','学':'學','寻':'尋','压':'壓','严':'嚴','盐':'鹽','验':'驗','阳':'陽','养':'養','样':'樣','药':'藥','爷':'爺','页':'頁','业':'業','医':'醫','义':'義','艺':'藝','忆':'憶','应':'應','优':'優','邮':'郵','鱼':'魚','与':'與','语':'語','郁':'鬱','誉':'譽','员':'員','园':'園','远':'遠','愿':'願','约':'約','跃':'躍','云':'雲','运':'運','杂':'雜','灾':'災','载':'載','暂':'暫','脏':'臟','凿':'鑿','择':'擇','泽':'澤','战':'戰','赵':'趙','折':'摺','这':'這','针':'針','珍':'瑧','征':'徵','争':'爭','证':'證','郑':'鄭','只':'隻','纸':'紙','志':'誌','制':'製','钟':'鐘','种':'種','众':'眾','昼':'晝','皱':'皺','朱':'硃','猪':'豬','筑':'築','庄':'莊','装':'裝','壮':'壯','状':'狀','准':'準','浊':'濁','资':'資','兹':'茲','总':'總','纵':'縱','钻':'鑽','嘴':'觜','组':'組','罪':'辠','尊':'樽'};
 
@@ -126,7 +180,7 @@ async function renderUsers(){
  if(!d.ok)return;
  _adminUserCache=d.users;
  const roleLabel=r=>r==='admin'?(isTw()?'管理員':'管理员'):r==='vip'?'VIP':r==='promo'?(isTw()?'限時優惠':'限时优惠'):(isTw()?'普通':'普通');
- document.getElementById('adminUserList').innerHTML=' **'+(isTw()?'已有帳號：':'已有账号：')+'**'+d.users.map(u=>
+ document.getElementById('adminUserList').innerHTML=' <strong>'+(isTw()?'已有帳號：':'已有账号：')+'</strong>'+d.users.map(u=>
  `<span style="display:inline-flex;align-items:center;padding:2px 10px;margin:3px 4px;background:var(--primary-light);border-radius:12px;color:var(--primary);font-size:12px">${u.username} [${roleLabel(u.role)}] ${u.role!=='admin'?`<a href="#" onclick="event.preventDefault();toggleRole('${u.username}')">${isTw()?'切換':'切换'}</a> <a href="#" onclick="event.preventDefault();delUser('${u.username}')">×</a>`:''}</span>`).join('');
  }catch(e){}
 }
@@ -427,9 +481,10 @@ async function loadMaterials(){
  const r=await fetch('/api/materials');const d=await r.json();
  if(d.ok&&d.items&&d.items.length>0){
  const serverIds=new Set(d.items.map(i=>i.id));
- characters=d.items;
- }else{characters=[];}
- }catch(e){characters=[];}
+ const defaultNotServer=DEF_CHARS.filter(c=>!serverIds.has(c.id));
+ characters=[...d.items,...defaultNotServer];
+ }else{characters=DEF_CHARS;}
+ }catch(e){characters=DEF_CHARS;}
 }
 
 try{const saved=localStorage.getItem('lz_cur');if(saved)currentUser=JSON.parse(saved);}catch(e){}
