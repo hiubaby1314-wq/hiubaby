@@ -159,7 +159,7 @@
 
   <section class="carousel-wrap">
     <div class="carousel-track">
-      <div class="carousel-slide"><div class="carousel-slide-inner"><img src="assets/assets/banner_optimized.jpg" alt="栗子素材网"></div></div>
+      <div class="carousel-slide"><div class="carousel-slide-inner"><img id="bannerImg" src="assets/assets/banner_optimized.jpg" alt="栗子素材网"></div></div>
     </div>
     <div class="carousel-notice">本站所有素材版权均已注册，未经允许禁止二次传播</div>
   </section>
@@ -269,6 +269,7 @@
     <div class="admin-toolbar" id="adminToolbar" style="display:none">
       <button class="admin-toolbar-btn add-btn" id="addMaterialBtn">+ 新增素材</button>
       <button class="admin-toolbar-btn add-btn" id="batchAddBtn" style="background:#8b5cf6;border-color:#8b5cf6">📦 批量新增</button>
+      <button class="admin-toolbar-btn" id="changeBannerBtn" style="background:#ec4899;color:#fff;border-color:#ec4899">🖼 更换横幅</button>
       <button class="admin-toolbar-btn" id="viewReqBtn" style="background:#f59e0b;color:#fff;border-color:#f59e0b">📩 查看需求</button>
       <button class="admin-toolbar-btn" id="viewBindingsBtn" style="background:#6366f1;color:#fff;border-color:#6366f1">🔗 查看绑定</button>
       <span style="font-size:12px;color:#6b7280;margin-left:auto">管理员新增的素材会永久保存</span>
@@ -425,6 +426,24 @@
       </div>
       <button class="modal-submit" id="batchSubmit">批量上傳</button>
       <div class="modal-msg" id="batchMsg"></div>
+    </div>
+  </div>
+
+  <!-- Banner Upload Modal -->
+  <div class="modal-overlay" id="bannerModal">
+    <div class="modal" style="max-width:500px">
+      <button class="modal-close" data-close="bannerModal">&times;</button>
+      <h3>🖼 更换横幅图片</h3>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
+        上传新横幅图片后将立即生效。建议使用宽度 1200px 以上的图片。
+      </p>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">横幅名称（可选）</label><input type="text" id="bannerName" placeholder="输入横幅名称或留空" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px"></div>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">选择横幅图片</label>
+        <input type="file" id="bannerFileInput" accept="image/*" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px" onchange="previewBannerFile(this)">
+        <div id="bannerFilePreview" style="margin-top:8px;text-align:center"></div>
+      </div>
+      <button class="modal-submit" id="bannerSubmit">上传并更换横幅</button>
+      <div class="modal-msg" id="bannerMsg"></div>
     </div>
   </div>
 
@@ -849,6 +868,8 @@
 
         card.addEventListener('click', function(e) {
           if (e.target.closest('.card-settings-btn') || e.target.closest('.settings-menu-btn') || e.target.closest('.download-lock-btn') || e.target.closest('.card-preview')) return;
+          // Don't open preview if any modal is currently open
+          if (document.querySelector('.modal-overlay.active, .notif-panel.open')) return;
           openPreview(realIdx);
         });
         grid.appendChild(card);
@@ -1347,7 +1368,10 @@
 
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
       overlay.addEventListener('click', function(e) {
-        if (e.target === this) this.classList.remove('active');
+        if (e.target === this) {
+          e.stopPropagation(); // Prevent click from reaching cards behind
+          this.classList.remove('active');
+        }
       });
     });
 
@@ -1666,6 +1690,76 @@
       this.textContent = '批量上傳';
     });
 
+    // === Banner Management ===
+    function loadBanner() {
+      fetch('/api/banner').then(r => r.json()).then(d => {
+        if (d.ok && d.banners && d.banners.length > 0) {
+          document.getElementById('bannerImg').src = d.banners[0].path;
+        }
+      }).catch(() => {});
+    }
+
+    function previewBannerFile(input) {
+      const container = document.getElementById('bannerFilePreview');
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          container.innerHTML = '<img src="'+e.target.result+'" style="max-width:100%;max-height:200px;border-radius:8px">';
+        };
+        reader.readAsDataURL(input.files[0]);
+      } else {
+        container.innerHTML = '';
+      }
+    }
+
+    document.getElementById('changeBannerBtn').addEventListener('click', function() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      document.getElementById('bannerName').value = '';
+      document.getElementById('bannerFileInput').value = '';
+      document.getElementById('bannerFilePreview').innerHTML = '';
+      document.getElementById('bannerMsg').textContent = '';
+      document.getElementById('bannerMsg').className = 'modal-msg';
+      document.getElementById('bannerModal').classList.add('active');
+    });
+
+    document.getElementById('bannerSubmit').addEventListener('click', async function() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      const fileInput = document.getElementById('bannerFileInput');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        document.getElementById('bannerMsg').textContent = '请选择横幅图片';
+        document.getElementById('bannerMsg').className = 'modal-msg error';
+        return;
+      }
+
+      this.disabled = true;
+      this.textContent = '上传中...';
+
+      const formData = new FormData();
+      formData.append('username', currentUser.username);
+      formData.append('name', document.getElementById('bannerName').value.trim());
+      formData.append('file', fileInput.files[0]);
+
+      try {
+        const r = await fetch('/api/banner', { method: 'POST', body: formData });
+        const d = await r.json();
+        if (d.ok) {
+          document.getElementById('bannerImg').src = d.banner.path;
+          document.getElementById('bannerMsg').textContent = '横幅已更换！';
+          document.getElementById('bannerMsg').className = 'modal-msg';
+          setTimeout(() => { document.getElementById('bannerModal').classList.remove('active'); }, 800);
+        } else {
+          document.getElementById('bannerMsg').textContent = '上传失败: ' + (d.error || '未知错误');
+          document.getElementById('bannerMsg').className = 'modal-msg error';
+        }
+      } catch(e) {
+        document.getElementById('bannerMsg').textContent = '网络错误: ' + e.message;
+        document.getElementById('bannerMsg').className = 'modal-msg error';
+      } finally {
+        this.disabled = false;
+        this.textContent = '上传并更换横幅';
+      }
+    });
+
     // Edit mode toggle
     
 
@@ -1806,6 +1900,7 @@
     // ===== INIT =====
     updateUserBar();
     loadMaterials();
+    loadBanner();
     // Try to auto-login if there's a saved session with password
     (async function autoLogin() {
       if (!currentUser) return;

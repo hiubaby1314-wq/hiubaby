@@ -95,6 +95,14 @@ function initDB() {
   try { db.exec('ALTER TABLE materials ADD COLUMN badges TEXT DEFAULT \'["版权","new"]\''); } catch(e) {}
   try { db.exec('ALTER TABLE users ADD COLUMN bound_device_id TEXT DEFAULT NULL'); } catch(e) {}
   try { db.exec('ALTER TABLE users ADD COLUMN bound_at DATETIME DEFAULT NULL'); } catch(e) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS banners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT DEFAULT '',
+    path TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`); } catch(e) {}
 
   // Create admin user if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -536,6 +544,63 @@ app.get('/api/bindings/all', (req, res) => {
     return { ...u, bindings };
   });
   res.json({ ok: true, users: usersWithBindings });
+});
+
+// === Banners ===
+app.get('/api/banner', (req, res) => {
+  const banners = db.prepare('SELECT * FROM banners WHERE active = 1 ORDER BY sort_order, id').all();
+  // Default to static fallback if no banners
+  if (banners.length === 0) {
+    return res.json({ ok: true, banners: [{ id: 0, name: 'default', path: 'assets/assets/banner_optimized.jpg', sort_order: 0 }] });
+  }
+  res.json({ ok: true, banners });
+});
+
+app.post('/api/banner', upload.single('file'), async (req, res) => {
+  const { username, name } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!user) return res.json({ ok: false, error: '权限不足' });
+  if (!req.file) return res.json({ ok: false, error: '请选择文件' });
+
+  const ext = path.extname(req.file.originalname);
+  const key = `banners/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+  const url = await uploadToR2(key, req.buffer, req.file.mimetype);
+
+  // Deactivate all existing banners
+  db.prepare('UPDATE banners SET active = 0').run();
+
+  // Add new banner as active
+  const result = db.prepare('INSERT INTO banners (name, path, sort_order, active) VALUES (?, ?, 0, 1)')
+    .run(name || req.file.originalname, url);
+
+  res.json({ ok: true, banner: { id: result.lastInsertRowid, name, path: url, active: 1 } });
+});
+
+app.delete('/api/banner/:id', (req, res) => {
+  const { username } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!user) return res.json({ ok: false, error: '权限不足' });
+
+  const banner = db.prepare('SELECT * FROM banners WHERE id = ?').get(req.params.id);
+  if (banner) {
+    if (banner.path && banner.path.startsWith('http')) deleteFromR2(banner.path);
+    db.prepare('DELETE FROM banners WHERE id = ?').run(req.params.id);
+  }
+  res.json({ ok: true, banners: db.prepare('SELECT * FROM banners WHERE active = 1 ORDER BY sort_order, id').all() });
+});
+
+app.put('/api/banner/:id', (req, res) => {
+  const { username, active } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!user) return res.json({ ok: false, error: '权限不足' });
+
+  if (active) {
+    // Deactivate all, then activate this one
+    db.prepare('UPDATE banners SET active = 0').run();
+    db.prepare('UPDATE banners SET active = 1 WHERE id = ?').run(req.params.id);
+  }
+
+  res.json({ ok: true, banners: db.prepare('SELECT * FROM banners WHERE active = 1 ORDER BY sort_order, id').all() });
 });
 
 // === Start ===
