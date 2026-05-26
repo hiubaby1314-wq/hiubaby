@@ -13,6 +13,7 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
 const USE_R2 = !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
 
+// === Database ===
 let db;
 function initDB() {
   const sqlite3 = require('better-sqlite3');
@@ -20,6 +21,8 @@ function initDB() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = sqlite3(DB_PATH);
   db.pragma('journal_mode = WAL');
+
+  // Materials table
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,30 +35,46 @@ function initDB() {
     CREATE TABLE IF NOT EXISTS materials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      cat TEXT NOT NULL,
-      files TEXT DEFAULT '[]',
-      img TEXT DEFAULT '',
-      imgs TEXT DEFAULT '[]',
-      fla TEXT DEFAULT '',
-      grad TEXT DEFAULT '',
-      is_new INTEGER DEFAULT 0,
-      limit_flag INTEGER DEFAULT 0,
+      cat TEXT NOT NULL DEFAULT '表情包',
+      badges TEXT DEFAULT '["版权","new"]',
+      gradient INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      downloads INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS material_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      material_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      ext TEXT NOT NULL,
+      size INTEGER DEFAULT 0,
+      mime TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS requests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      desc TEXT NOT NULL,
-      contact TEXT NOT NULL,
+      user TEXT DEFAULT '匿名',
+      content TEXT NOT NULL,
+      contact TEXT DEFAULT '',
       images TEXT DEFAULT '[]',
-      read INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS bindings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL,
-      douyin TEXT DEFAULT '',
-      bilibili TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      platform TEXT NOT NULL,
+      platform_account TEXT NOT NULL,
+      bind_time DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user TEXT NOT NULL,
+      from_user TEXT DEFAULT '系统',
+      message TEXT NOT NULL,
+      is_read INTEGER DEFAULT 0,
+      time DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,14 +84,22 @@ function initDB() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Add missing columns if needed
+  try { db.exec('ALTER TABLE materials ADD COLUMN sort_order INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE materials ADD COLUMN downloads INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE materials ADD COLUMN gradient INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE materials ADD COLUMN badges TEXT DEFAULT \'["版权","new"]\''); } catch(e) {}
+
+  // Create admin user if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
   if (!adminExists) {
     db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, ?)')
       .run('admin', crypto.createHash('md5').update('admin123').digest('hex'), 'admin', 0);
   }
-  try { db.exec('ALTER TABLE materials ADD COLUMN limit_flag INTEGER DEFAULT 0'); } catch(e) {}
 }
 
+// === R2 Storage ===
 let s3Client = null;
 
 async function initR2() {
@@ -100,22 +127,19 @@ async function uploadToR2(key, buffer, contentType) {
 
 async function deleteFromR2(url) {
   if (!s3Client) return;
-  // Extract the key from a full URL or use as-is
   let key = url;
   if (url.startsWith('http')) {
-    // URL format: https://R2_PUBLIC_URL/uploads/xxx.ext
     const prefix = R2_PUBLIC_URL ? R2_PUBLIC_URL + '/' : '';
     key = url.replace(prefix, '');
   }
   try {
-    await s3Client.client.send(new s3Client.DeleteObjectCommand({
-      Bucket: R2_BUCKET, Key: key
-    }));
+    await s3Client.client.send(new s3Client.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
   } catch(e) {
     console.error('R2 delete error:', e.message, 'key:', key);
   }
 }
 
+// === Middleware ===
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -125,16 +149,42 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 function hashPwd(p) { return crypto.createHash('md5').update(p).digest('hex'); }
 
+// === Helper: get material with files ===
+function getMaterialWithFiles(id) {
+  const mat = db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
+  if (!mat) return null;
+  const files = db.prepare('SELECT * FROM material_files WHERE material_id = ? ORDER BY id').all(id);
+  return {
+    ...mat,
+    badges: JSON.parse(mat.badges || '["版权","new"]'),
+    uploadedFiles: files.map(f => ({ name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
+  };
+}
+
+function getAllMaterials() {
+  const materials = db.prepare('SELECT * FROM materials ORDER BY sort_order, id DESC').all();
+  return materials.map(m => {
+    const files = db.prepare('SELECT * FROM material_files WHERE material_id = ? ORDER BY id').all(m.id);
+    return {
+      ...m,
+      badges: JSON.parse(m.badges || '["版权","new"]'),
+      uploadedFiles: files.map(f => ({ name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
+    };
+  });
+}
+
+// === API Routes ===
+
+// Login
 app.post('/api/login', (req, res) => {
-  const { username, password, deviceId } = req.body;
+  const { username, password } = req.body;
   if (!username || !password) return res.json({ ok: false, error: '请输入用户名和密码' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.password !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
-  const token = crypto.randomBytes(16).toString('hex');
-  db.prepare('INSERT INTO sessions (username, device_id, token) VALUES (?, ?, ?)').run(username, deviceId || '', token);
-  res.json({ ok: true, user: { username: user.username, role: user.role }, forcePwdChange: !!user.force_pwd_change });
+  res.json({ ok: true, user: { username: user.username, role: user.role } });
 });
 
+// Change password
 app.post('/api/changePwd', (req, res) => {
   const { username, oldPwd, newPwd } = req.body;
   if (!oldPwd || !newPwd || newPwd.length < 4) return res.json({ ok: false, error: '新密码至少4位' });
@@ -144,18 +194,26 @@ app.post('/api/changePwd', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/admin/addUser', (req, res) => {
-  const { adminUsername, newUsername, role } = req.body;
+// === Users ===
+app.get('/api/users', (req, res) => {
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.query.username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
+  res.json({ ok: true, users: db.prepare('SELECT username, role FROM users ORDER BY created_at DESC').all() });
+});
+
+app.post('/api/users', (req, res) => {
+  const { adminUsername, username, role } = req.body;
   const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
   if (!admin) return res.json({ ok: false, error: '权限不足' });
-  if (!newUsername || newUsername.length < 2) return res.json({ ok: false, error: '用户名至少2个字符' });
-  if (db.prepare('SELECT id FROM users WHERE username = ?').get(newUsername)) return res.json({ ok: false, error: '用户名已存在' });
-  db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, 1)').run(newUsername, hashPwd('123456'), role || 'user');
+  if (!username || username.length < 2) return res.json({ ok: false, error: '用户名至少2个字符' });
+  if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) return res.json({ ok: false, error: '用户名已存在' });
+  db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, 1)').run(username, hashPwd('123456'), role || 'user');
   res.json({ ok: true });
 });
 
-app.post('/api/admin/delUser', (req, res) => {
-  const { adminUsername, targetUsername } = req.body;
+app.delete('/api/users/:username', (req, res) => {
+  const { adminUsername } = req.body;
+  const targetUsername = req.params.username;
   const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
   if (!admin) return res.json({ ok: false, error: '权限不足' });
   if (targetUsername === 'admin') return res.json({ ok: false, error: '不能删除管理员' });
@@ -163,142 +221,235 @@ app.post('/api/admin/delUser', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/admin/toggleRole', (req, res) => {
-  const { adminUsername, targetUsername } = req.body;
-  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
-  if (!admin) return res.json({ ok: false, error: '权限不足' });
-  const target = db.prepare('SELECT * FROM users WHERE username = ?').get(targetUsername);
-  if (!target) return res.json({ ok: false, error: '用户不存在' });
-  const roles = ['user', 'promo', 'vip'];
-  const newRole = roles[(roles.indexOf(target.role) + 1) % roles.length];
-  db.prepare('UPDATE users SET role = ? WHERE username = ?').run(newRole, targetUsername);
-  res.json({ ok: true, newRole });
-});
-
-app.get('/api/admin/users', (req, res) => {
-  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.query.adminUsername, 'admin');
-  if (!admin) return res.json({ ok: false, error: '权限不足' });
-  res.json({ ok: true, users: db.prepare('SELECT username, role FROM users ORDER BY created_at DESC').all() });
-});
-
+// === Materials ===
 app.get('/api/materials', (req, res) => {
-  const items = db.prepare('SELECT * FROM materials ORDER BY created_at DESC').all();
-  res.json({ ok: true, items: items.map(item => ({
-    ...item,
-    files: JSON.parse(item.files || '[]'),
-    imgs: JSON.parse(item.imgs || '[]'),
-    isNew: !!item.is_new,
-    limit: !!item.limit_flag
-  }))});
+  res.json({ ok: true, materials: getAllMaterials() });
 });
 
-app.post('/api/materials', upload.fields({ images: 5, fla: 1 }), async (req, res) => {
-  const { username, name, cat, files, isNew, limit } = req.body;
+// Add material with file uploads
+app.post('/api/materials', upload.array('files', 20), async (req, res) => {
+  const { username, name, cat, badges, gradient } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   if (!name) return res.json({ ok: false, error: '请输入名称' });
-  const imgFiles = req.files['images'] || [];
-  const flaFile = req.files['fla'] ? req.files['fla'][0] : null;
-  const imgPaths = [];
-  for (const f of imgFiles) {
-    const key = `uploads/${Date.now()}-${Math.round(Math.random()*1E9)}${path.extname(f.originalname)}`;
-    imgPaths.push(await uploadToR2(key, f.buffer, f.mimetype));
+
+  const matBadges = badges ? badges.split(',').map(s => s.trim()) : ['版权', 'new'];
+  const grad = gradient !== undefined ? parseInt(gradient) : Math.floor(Math.random() * 25);
+
+  const result = db.prepare('INSERT INTO materials (name, cat, badges, gradient) VALUES (?, ?, ?, ?)')
+    .run(name, cat || '表情包', JSON.stringify(matBadges), grad);
+  const materialId = result.lastInsertRowid;
+
+  // Upload files
+  const files = req.files || [];
+  for (const f of files) {
+    const ext = path.extname(f.originalname);
+    const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    const url = await uploadToR2(key, f.buffer, f.mimetype);
+    db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
-  let flaPath = '';
-  if (flaFile) {
-    const key = `uploads/${Date.now()}-${Math.round(Math.random()*1E9)}.fla`;
-    flaPath = await uploadToR2(key, flaFile.buffer, 'application/octet-stream');
-  }
-  db.prepare(`INSERT INTO materials (name, cat, files, img, imgs, fla, grad, is_new, limit_flag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(name, cat, JSON.stringify(files ? files.split(',').map(s=>s.trim()) : []), imgPaths[0]||'', JSON.stringify(imgPaths), flaPath, '', isNew==='true'?1:0, limit==='true'?1:0);
-  res.json({ ok: true });
+
+  res.json({ ok: true, materials: getAllMaterials() });
 });
 
-app.post('/api/materials/update', upload.fields({ images: 5, fla: 1 }), async (req, res) => {
-  const { username, id, name, cat, files, isNew, limit } = req.body;
+// Upload files to existing material
+app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res) => {
+  const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
-  if (!name) return res.json({ ok: false, error: '请输入名称' });
-  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
+  const materialId = req.params.id;
+  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (!material) return res.json({ ok: false, error: '素材不存在' });
-  let imgPaths = JSON.parse(material.imgs || '[]');
-  for (const f of (req.files['images'] || [])) {
-    const key = `uploads/${Date.now()}-${Math.round(Math.random()*1E9)}${path.extname(f.originalname)}`;
-    imgPaths.push(await uploadToR2(key, f.buffer, f.mimetype));
+
+  const files = req.files || [];
+  for (const f of files) {
+    const ext = path.extname(f.originalname);
+    const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    const url = await uploadToR2(key, f.buffer, f.mimetype);
+    db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
-  let flaPath = material.fla || '';
-  if (req.files['fla'] && req.files['fla'][0]) {
-    flaPath = await uploadToR2(`uploads/${Date.now()}-${Math.round(Math.random()*1E9)}.fla`, req.files['fla'][0].buffer, 'application/octet-stream');
-  }
-  db.prepare(`UPDATE materials SET name=?, cat=?, files=?, img=?, imgs=?, fla=?, is_new=?, limit_flag=? WHERE id=?`)
-    .run(name, cat, JSON.stringify(files ? files.split(',').map(s=>s.trim()) : JSON.parse(material.files)), imgPaths[0]||material.img||'', JSON.stringify(imgPaths), flaPath, isNew==='true'?1:0, limit==='true'?1:0, id);
-  res.json({ ok: true });
+
+  res.json({ ok: true, material: getMaterialWithFiles(materialId) });
 });
 
-app.post('/api/materials/delete', async (req, res) => {
-  const { username, id } = req.body;
+// Update material
+app.put('/api/materials/:id', (req, res) => {
+  const { username, name, cat, badges, gradient } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
-  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
-  if (material) {
-    if (material.fla) await deleteFromR2(material.fla);
-    try { JSON.parse(material.imgs||'[]').forEach(u => deleteFromR2(u)); } catch(e) {}
-    if (material.img) await deleteFromR2(material.img);
+  const materialId = req.params.id;
+  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
+  if (!material) return res.json({ ok: false, error: '素材不存在' });
+
+  const updates = {};
+  if (name) updates.name = name;
+  if (cat) updates.cat = cat;
+  if (badges) updates.badges = JSON.stringify(Array.isArray(badges) ? badges : badges.split(',').map(s => s.trim()));
+  if (gradient !== undefined) updates.gradient = parseInt(gradient);
+
+  if (Object.keys(updates).length > 0) {
+    const sets = Object.entries(updates).map(([k, v]) => `${k} = ?`).join(', ');
+    const vals = [...Object.values(updates), materialId];
+    db.prepare(`UPDATE materials SET ${sets} WHERE id = ?`).run(...vals);
   }
-  db.prepare('DELETE FROM materials WHERE id = ?').run(id);
-  res.json({ ok: true });
+
+  res.json({ ok: true, materials: getAllMaterials() });
 });
 
-app.post('/api/requests', upload.single('images'), async (req, res) => {
-  const { desc, contact } = req.body;
-  if (!desc || !contact) return res.json({ ok: false, error: '请填写完整信息' });
-  let imgPaths = [];
-  if (req.file) {
-    const key = `uploads/${Date.now()}-${Math.round(Math.random()*1E9)}${path.extname(req.file.originalname)}`;
-    imgPaths = [await uploadToR2(key, req.file.buffer, req.file.mimetype)];
+// Delete material
+app.delete('/api/materials/:id', (req, res) => {
+  const { username } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
+  const materialId = req.params.id;
+
+  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
+  if (material) {
+    const files = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(materialId);
+    files.forEach(f => {
+      if (f.path && f.path.startsWith('http')) deleteFromR2(f.path);
+    });
+    db.prepare('DELETE FROM material_files WHERE material_id = ?').run(materialId);
+    db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
   }
-  db.prepare('INSERT INTO requests (desc, contact, images) VALUES (?, ?, ?)').run(desc, contact, JSON.stringify(imgPaths));
+
+  res.json({ ok: true, materials: getAllMaterials() });
+});
+
+// Reorder materials
+app.post('/api/materials/reorder', (req, res) => {
+  const { username, order } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
+  const stmt = db.prepare('UPDATE materials SET sort_order = ? WHERE id = ?');
+  const materials = getAllMaterials();
+  order.forEach((idx, i) => {
+    if (materials[idx]) stmt.run(i, materials[idx].id);
+  });
+  res.json({ ok: true, materials: getAllMaterials() });
+});
+
+// === Download ===
+app.post('/api/download', (req, res) => {
+  const { username, materialIndex } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.json({ ok: false, error: '请先登录' });
+
+  const materials = getAllMaterials();
+  const material = materials[materialIndex];
+  if (!material) return res.json({ ok: false, error: '素材不存在' });
+
+  const role = user.role;
+  const canDl = role === 'admin' || role === 'vip' ||
+    (role === 'user' && material.cat === '表情包') ||
+    (role === 'promo' && material.cat === '限时优惠');
+
+  if (!canDl) return res.json({ ok: false, error: '权限不足，无法下载此素材' });
+
+  // Increment download count
+  db.prepare('UPDATE materials SET downloads = downloads + 1 WHERE id = ?').run(material.id);
+
+  res.json({ ok: true, material: getMaterialWithFiles(material.id) });
+});
+
+// === Requests ===
+app.post('/api/requests', upload.array('images', 5), async (req, res) => {
+  const { username, content, contact } = req.body;
+  if (!content) return res.json({ ok: false, error: '请填写需求描述' });
+
+  const imgPaths = [];
+  const files = req.files || [];
+  for (const f of files) {
+    const ext = path.extname(f.originalname);
+    const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    imgPaths.push(await uploadToR2(key, f.buffer, f.mimetype));
+  }
+
+  db.prepare('INSERT INTO requests (user, content, contact, images) VALUES (?, ?, ?, ?)')
+    .run(username || '匿名', content, contact || '', JSON.stringify(imgPaths));
+
+  // Notify admin
+  const admins = db.prepare('SELECT username FROM users WHERE role = ?').all('admin');
+  for (const admin of admins) {
+    db.prepare('INSERT INTO notifications (user, from_user, message) VALUES (?, ?, ?)')
+      .run(admin.username, username || '匿名', `收到新的素材需求: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`);
+  }
+
   res.json({ ok: true });
 });
 
 app.get('/api/requests', (req, res) => {
-  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.query.adminUsername, 'admin');
-  if (!admin) return res.json({ ok: false, error: '权限不足' });
   const requests = db.prepare('SELECT * FROM requests ORDER BY created_at DESC').all();
-  res.json({ ok: true, requests: requests.map(r => ({ ...r, images: JSON.parse(r.images||'[]') })) });
+  res.json({ ok: true, requests: requests.map(r => ({
+    ...r,
+    images: JSON.parse(r.images || '[]')
+  }))});
 });
 
-app.post('/api/requests/read', (req, res) => {
-  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.body.adminUsername, 'admin');
+app.delete('/api/requests/:id', (req, res) => {
+  const { username } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!user) return res.json({ ok: false, error: '权限不足' });
+  db.prepare('DELETE FROM requests WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// === Notifications ===
+app.get('/api/notifications', (req, res) => {
+  const notifs = db.prepare('SELECT * FROM notifications WHERE user = ? ORDER BY time DESC').all(req.query.username);
+  const unread = db.prepare('SELECT COUNT(*) as cnt FROM notifications WHERE user = ? AND is_read = 0').get(req.query.username).cnt;
+  res.json({ ok: true, notifications: notifs, unread });
+});
+
+app.post('/api/notifications/read', (req, res) => {
+  const { username } = req.body;
+  db.prepare('UPDATE notifications SET is_read = 1 WHERE user = ?').run(username);
+  res.json({ ok: true });
+});
+
+// === Bindings ===
+app.post('/api/bindings', (req, res) => {
+  const { username, platform, platformAccount } = req.body;
+  if (!platform || !platformAccount) return res.json({ ok: false, error: '请填写完整信息' });
+  const existing = db.prepare('SELECT id FROM bindings WHERE username = ? AND platform = ?').get(username, platform);
+  if (existing) {
+    db.prepare('UPDATE bindings SET platform_account = ? WHERE username = ? AND platform = ?').run(platformAccount, username, platform);
+  } else {
+    db.prepare('INSERT INTO bindings (username, platform, platform_account) VALUES (?, ?, ?)').run(username, platform, platformAccount);
+  }
+  res.json({ ok: true });
+});
+
+app.get('/api/bindings', (req, res) => {
+  const bindings = db.prepare('SELECT * FROM bindings WHERE username = ? ORDER BY bind_time DESC').all(req.query.username);
+  res.json({ ok: true, bindings });
+});
+
+app.delete('/api/bindings/:platform', (req, res) => {
+  const { username } = req.body;
+  db.prepare('DELETE FROM bindings WHERE username = ? AND platform = ?').run(username, req.params.platform);
+  res.json({ ok: true });
+});
+
+app.get('/api/bindings/all', (req, res) => {
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.query.username, 'admin');
   if (!admin) return res.json({ ok: false, error: '权限不足' });
-  req.body.ids.forEach(id => db.prepare('UPDATE requests SET read = 1 WHERE id = ?').run(id));
-  res.json({ ok: true });
+  const users = db.prepare('SELECT username, role FROM users ORDER BY created_at DESC').all();
+  const usersWithBindings = users.map(u => {
+    const bindings = db.prepare('SELECT * FROM bindings WHERE username = ?').all(u.username);
+    return { ...u, bindings };
+  });
+  res.json({ ok: true, users: usersWithBindings });
 });
 
-app.get('/api/requests/count', (req, res) => {
-  res.json({ ok: true, count: db.prepare('SELECT COUNT(*) as cnt FROM requests WHERE read = 0').get().cnt });
-});
-
-app.get('/api/me', (req, res) => {
-  const user = db.prepare('SELECT username, role FROM users WHERE username = ?').get(req.query.username);
-  if (!user) return res.json({ ok: false, error: '用户不存在' });
-  const binding = db.prepare('SELECT * FROM bindings WHERE username = ?').get(user.username);
-  res.json({ ok: true, user, bindings: binding ? { douyin: binding.douyin, bilibili: binding.bilibili } : {} });
-});
-
-app.post('/api/bind-accounts', (req, res) => {
-  const { username, douyin, bilibili } = req.body;
-  const existing = db.prepare('SELECT id FROM bindings WHERE username = ?').get(username);
-  if (existing) db.prepare('UPDATE bindings SET douyin = ?, bilibili = ? WHERE username = ?').run(douyin, bilibili, username);
-  else db.prepare('INSERT INTO bindings (username, douyin, bilibili) VALUES (?, ?, ?)').run(username, douyin, bilibili);
-  res.json({ ok: true });
-});
-
+// === Start ===
 async function main() {
   await initR2();
   initDB();
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`栗子素材网 running on http://0.0.0.0:${PORT} | R2: ${USE_R2?'enabled':'disabled'}`);
+    console.log(`栗子素材网 running on http://0.0.0.0:${PORT} | R2: ${USE_R2 ? 'enabled' : 'disabled'}`);
   });
 }
 main().catch(err => { console.error('Failed to start:', err); process.exit(1); });
