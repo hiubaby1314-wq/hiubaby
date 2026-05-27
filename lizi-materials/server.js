@@ -319,8 +319,19 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
       .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
 
+  // Check if only one file uploaded (should be FLA + PNG/GIF)
+  const fileCount = files.length;
+  const hasFla = files.some(f => path.extname(f.originalname).toLowerCase() === '.fla');
+  const hasImage = files.some(f => ['.png', '.gif', '.jpg', '.jpeg'].includes(path.extname(f.originalname).toLowerCase()));
+  let warning = '';
+  if (fileCount === 1) {
+    warning = hasFla ? '只上傳了 FLA 文件，缺少 PNG/GIF 圖片' : '只上傳了圖片文件，缺少 FLA 源文件';
+  } else if (fileCount >= 2 && (!hasFla || !hasImage)) {
+    warning = !hasFla ? '缺少 FLA 源文件' : '缺少 PNG/GIF 圖片文件';
+  }
+
   await syncDB();
-  res.json({ ok: true, materials: getAllMaterials() });
+  res.json({ ok: true, materials: getAllMaterials(), warning });
 });
 
 // Upload files to existing material

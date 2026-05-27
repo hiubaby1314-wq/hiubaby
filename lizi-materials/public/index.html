@@ -1592,6 +1592,7 @@
       let skipped = 0;
       let renamed = 0;
       const errors = [];
+      const warnings = [];
 
       for (const [name, files] of Object.entries(groups)) {
         try {
@@ -1608,7 +1609,8 @@
           const d = await r.json();
           
           if (d.ok) { 
-            success++; 
+            success++;
+            if (d.warning) warnings.push(finalName + ': ' + d.warning);
           } else if (d.error === 'duplicate') {
             // Auto-rename duplicate by appending a random suffix
             renamed++;
@@ -1616,7 +1618,10 @@
             formData.set('name', finalName + suffix);
             const r2 = await fetch('/api/materials', { method: 'POST', body: formData });
             const d2 = await r2.json();
-            if (d2.ok) { success++; }
+            if (d2.ok) { 
+              success++;
+              if (d2.warning) warnings.push(finalName + suffix + ': ' + d2.warning);
+            }
             else { fail++; errors.push(name + ': ' + d2.error); }
           } else { 
             fail++; errors.push(name + ': ' + d.error); 
@@ -1633,11 +1638,14 @@
         let msg = '成功上傳 ' + success + ' 個素材';
         if (renamed > 0) msg += '（其中 ' + renamed + ' 個名稱重複已自動改名）';
         if (fail > 0) msg += '，' + fail + ' 個失敗';
+        if (warnings.length > 0) {
+          msg += '\n\n⚠️ 以下素材文件不完整：\n' + warnings.join('\n');
+        }
         document.getElementById('batchMsg').textContent = msg;
         document.getElementById('batchMsg').className = 'modal-msg';
         materials = (await fetch('/api/materials').then(r => r.json())).materials;
         renderCards();
-        setTimeout(() => { document.getElementById('batchModal').classList.remove('active'); }, 1500);
+        setTimeout(() => { document.getElementById('batchModal').classList.remove('active'); }, warnings.length > 0 ? 5000 : 1500);
       } else {
         document.getElementById('batchMsg').textContent = '上傳失敗：' + errors.join('; ');
         document.getElementById('batchMsg').className = 'modal-msg error';
@@ -1725,7 +1733,12 @@
           editSelectedFiles.forEach(f => formData.append('files', f));
           d = await apiAddMaterialWithFiles(formData);
           if (!d.ok) throw new Error(d.error);
-          msg.textContent = '素材已添加！';
+          if (d.warning) {
+            msg.textContent = '素材已添加！\n⚠️ ' + d.warning;
+            msg.style.whiteSpace = 'pre-line';
+          } else {
+            msg.textContent = '素材已添加！';
+          }
         }
         msg.className = 'modal-msg';
         editSelectedFiles = [];
