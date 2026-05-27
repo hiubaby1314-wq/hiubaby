@@ -343,6 +343,8 @@ app.delete('/api/materials/:id', async (req, res) => {
     }));
     db.prepare('DELETE FROM material_files WHERE material_id = ?').run(materialId);
     db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
+    // Real-time backup
+    await uploadDB().catch(e => console.error('Sync failed:', e));
   }
 
   res.json({ ok: true, materials: getAllMaterials() });
