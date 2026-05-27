@@ -164,6 +164,16 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 function hashPwd(p) { return crypto.createHash('md5').update(p).digest('hex'); }
 
+// Rewrite old R2 bucket URLs to the current R2_PUBLIC_URL
+function rewriteR2Url(url) {
+  if (!url || typeof url !== 'string') return url;
+  // Match any pub-xxxxxxxx.r2.dev URL and replace with current R2_PUBLIC_URL
+  if (R2_PUBLIC_URL && url.includes('.r2.dev/')) {
+    return url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev/, R2_PUBLIC_URL);
+  }
+  return url;
+}
+
 // === Helper: get material with files ===
 function getMaterialWithFiles(id) {
   const mat = db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
@@ -172,7 +182,7 @@ function getMaterialWithFiles(id) {
   return {
     ...mat,
     badges: JSON.parse(mat.badges || '["版权","new"]'),
-    uploadedFiles: files.map(f => ({ name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
+    uploadedFiles: files.map(f => ({ name: f.name, path: rewriteR2Url(f.path), ext: f.ext, size: f.size, mime: f.mime }))
   };
 }
 
@@ -183,7 +193,7 @@ function getAllMaterials() {
     return {
       ...m,
       badges: JSON.parse(m.badges || '["版权","new"]'),
-      uploadedFiles: files.map(f => ({ name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
+      uploadedFiles: files.map(f => ({ name: f.name, path: rewriteR2Url(f.path), ext: f.ext, size: f.size, mime: f.mime }))
     };
   });
 }
