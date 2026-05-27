@@ -84,6 +84,13 @@ function initDB() {
       token TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS device_lock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      device_id TEXT NOT NULL,
+      is_mobile INTEGER DEFAULT 0,
+      locked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Add missing columns if needed
@@ -228,11 +235,29 @@ function getAllMaterials() {
 // === API Routes ===
 
 // Login
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
+app.post('/api/login', async (req, res) => {
+  const { username, password, deviceId, isMobile } = req.body;
   if (!username || !password) return res.json({ ok: false, error: '请输入用户名和密码' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.password !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
+
+  // Check device lock
+  const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+  if (lock) {
+    if (lock.device_id !== deviceId) {
+      return res.json({ ok: false, error: '该账号已在其他设备登录，无法在此设备使用' });
+    }
+    // Update mobile status if changed
+    if (lock.is_mobile !== (isMobile ? 1 : 0)) {
+      db.prepare('UPDATE device_lock SET is_mobile = ? WHERE username = ?').run(isMobile ? 1 : 0, username);
+    }
+  } else {
+    // First login, lock device
+    db.prepare('INSERT INTO device_lock (username, device_id, is_mobile) VALUES (?, ?, ?)')
+      .run(username, deviceId, isMobile ? 1 : 0);
+    await syncDB();
+  }
+
   res.json({ ok: true, user: { username: user.username, role: user.role } });
 });
 
@@ -420,9 +445,20 @@ app.post('/api/materials/reorder', async (req, res) => {
 
 // === Download ===
 app.post('/api/download', async (req, res) => {
-  const { username, materialIndex } = req.body;
+  const { username, materialIndex, deviceId } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return res.json({ ok: false, error: '请先登录' });
+
+  // Check device lock
+  const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+  if (lock) {
+    if (lock.device_id !== deviceId) {
+      return res.json({ ok: false, error: '设备不匹配，无法下载' });
+    }
+    if (lock.is_mobile) {
+      return res.json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+    }
+  }
 
   const materials = getAllMaterials();
   const material = materials[materialIndex];
@@ -568,7 +604,7 @@ async function setupDBSync() {
   const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
   console.log(`Current material count: ${materialCount}`);
   
-  if (USE_R2 && materialCount < 50) {
+  if (USE_R2 && materialCount < 55) {
     console.log('Material count is too low, restoring from backup...');
     const backupBuffer = await downloadFromR2('lizi_backup.db');
     if (backupBuffer) {

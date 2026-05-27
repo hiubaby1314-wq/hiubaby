@@ -485,6 +485,35 @@
     } catch(e) {}
 
     // ===== UTILITY FUNCTIONS =====
+    // Generate device fingerprint
+    function getDeviceId() {
+      const nav = navigator;
+      const screen = window.screen;
+      const components = [
+        nav.userAgent,
+        nav.language,
+        screen.colorDepth,
+        screen.width + 'x' + screen.height,
+        new Date().getTimezoneOffset(),
+        nav.hardwareConcurrency || '',
+        nav.platform || ''
+      ];
+      // Simple hash
+      const str = components.join('|');
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return 'device_' + Math.abs(hash).toString(36);
+    }
+
+    // Detect if mobile device
+    function isMobileDevice() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
     // HTML escape to prevent XSS
     function escapeHtml(text) {
       if (text == null) return '';
@@ -532,7 +561,16 @@
       return text.split('').map(c => t2sMap[c] || c).join('');
     }
     async function apiLogin(username, password) {
-      const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password}) });
+      const r = await fetch('/api/login', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          username,
+          password,
+          deviceId: getDeviceId(),
+          isMobile: isMobileDevice()
+        })
+      });
       return r.json();
     }
 
@@ -574,12 +612,16 @@
 
     async function doDownload(idx, btnEl) {
       if (!currentUser) { openLogin(); return; }
+      if (isMobileDevice()) {
+        alert('手机设备仅支持预览，无法下载素材');
+        return;
+      }
       if (btnEl) { btnEl.disabled = true; btnEl.textContent = '准备下载...'; }
       try {
         const r = await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: currentUser.username, materialIndex: idx })
+          body: JSON.stringify({ username: currentUser.username, materialIndex: idx, deviceId: getDeviceId() })
         });
         const d = await r.json();
         if (!d.ok) {
