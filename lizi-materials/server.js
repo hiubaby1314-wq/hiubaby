@@ -494,6 +494,9 @@ app.get('/api/notifications', (req, res) => {
 
 app.post('/api/notifications/read', (req, res) => {
   const { username } = req.body;
+  // Verify user exists
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.json({ ok: false, error: '用户不存在' });
   db.prepare('UPDATE notifications SET is_read = 1 WHERE user = ?').run(username);
   res.json({ ok: true });
 });
@@ -534,21 +537,6 @@ app.get('/api/bindings/all', (req, res) => {
 });
 
 // === Start ===
-async function uploadDB() {
-  if (!s3Client || !db) return;
-  try {
-    // Checkpoint WAL to main file before upload
-    db.pragma('wal_checkpoint(TRUNCATE)');
-    const buffer = fs.readFileSync(DB_PATH);
-    await s3Client.client.send(new s3Client.PutObjectCommand({
-      Bucket: R2_BUCKET, Key: DB_KEY, Body: buffer, ContentType: 'application/octet-stream'
-    }));
-    console.log('DB synced to R2');
-  } catch(e) {
-    console.error('DB upload to R2 failed:', e.message);
-  }
-}
-
 async function setupDBSync() {
   if (USE_R2) {
     console.log('Checking for DB in R2...');
@@ -564,7 +552,7 @@ async function setupDBSync() {
   initDB();
   // Upload DB immediately on startup so R2 always has latest
   if (USE_R2) {
-    await uploadDB();
+    await syncDB();
   }
 }
 

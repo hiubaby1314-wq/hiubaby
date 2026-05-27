@@ -729,7 +729,7 @@
       }
       list.innerHTML = d.notifications.reverse().map((n, i) =>
         '<div class="notif-item'+(n.read?'':' unread')+'" onclick="markNotifRead('+i+')">'+
-          '<div class="notif-from">'+(n.from||'系统')+'</div>'+
+          '<div class="notif-from">'+(n.from_user||'系统')+'</div>'+
           '<div class="notif-msg">'+n.message+'</div>'+
           '<div class="notif-time">'+new Date(n.time).toLocaleString('zh-CN')+'</div>'+
         '</div>'
@@ -960,7 +960,7 @@
           r.images.forEach(img => { html += '<img src="'+escapeHtml(img)+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="window.open(this.src)">'; });
           html += '</div>';
         }
-        html += (currentUser && currentUser.role === 'admin' ? '<button onclick="handleDeleteRequest('+i+')" style="margin-top:8px;background:#ef4444;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">删除</button>' : '') + '</div>';
+        html += (currentUser && currentUser.role === 'admin' ? '<button onclick="handleDeleteRequest('+r.id+')" style="margin-top:8px;background:#ef4444;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">删除</button>' : '') + '</div>';
         return html;
       }).join('');
     }
