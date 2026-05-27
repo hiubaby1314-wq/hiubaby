@@ -550,6 +550,20 @@ async function setupDBSync() {
     }
   }
   initDB();
+  
+  // Migration: fix category names
+  const migrations = [
+    { from: '背景', to: '背景图' },
+    { from: '道具', to: '道具栏' }
+  ];
+  
+  for (const m of migrations) {
+    const result = db.prepare('UPDATE materials SET cat = ? WHERE cat = ?').run(m.to, m.from);
+    if (result.changes > 0) {
+      console.log(`Migration: ${result.changes} materials updated from "${m.from}" to "${m.to}"`);
+    }
+  }
+  
   // Upload DB immediately on startup so R2 always has latest
   if (USE_R2) {
     await syncDB();
