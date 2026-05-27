@@ -174,6 +174,21 @@ function rewriteR2Url(url) {
   return url;
 }
 
+// === DB Sync Helper ===
+async function syncDB() {
+  if (USE_R2) {
+    await uploadDB().catch(e => console.error('DB sync failed:', e.message));
+  }
+}
+
+// === DB Auto-sync ===
+// Fallback sync every 30s in case immediate sync misses something
+if (USE_R2) {
+  setInterval(() => {
+    syncDB().catch(e => console.error('Auto-sync failed:', e.message));
+  }, 30000);
+}
+
 // === Helper: get material with files ===
 function getMaterialWithFiles(id) {
   const mat = db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
@@ -226,7 +241,7 @@ app.get('/api/users', (req, res) => {
   res.json({ ok: true, users: db.prepare('SELECT username, role FROM users ORDER BY created_at DESC').all() });
 });
 
-app.post('/api/users', (req, res) => {
+app.post('/api/users', async (req, res) => {
   const { adminUsername, username, role } = req.body;
   const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
   if (!admin) return res.json({ ok: false, error: '权限不足' });
@@ -234,9 +249,10 @@ app.post('/api/users', (req, res) => {
   if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) return res.json({ ok: false, error: '用户名已存在' });
   db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, 1)').run(username, hashPwd('123456'), role || 'user');
   res.json({ ok: true });
+  await syncDB();
 });
 
-app.delete('/api/users/:username', (req, res) => {
+app.delete('/api/users/:username', async (req, res) => {
   const { adminUsername } = req.body;
   const targetUsername = req.params.username;
   const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
@@ -244,6 +260,7 @@ app.delete('/api/users/:username', (req, res) => {
   if (targetUsername === 'admin') return res.json({ ok: false, error: '不能删除管理员' });
   db.prepare('DELETE FROM users WHERE username = ?').run(targetUsername);
   res.json({ ok: true });
+  await syncDB();
 });
 
 // === Materials ===
@@ -290,6 +307,7 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
   }
 
   res.json({ ok: true, materials: getAllMaterials() });
+  await syncDB();
 });
 
 // Upload files to existing material
@@ -311,10 +329,11 @@ app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res
   }
 
   res.json({ ok: true, material: getMaterialWithFiles(materialId) });
+  await syncDB();
 });
 
 // Update material
-app.put('/api/materials/:id', (req, res) => {
+app.put('/api/materials/:id', async (req, res) => {
   const { username, name, cat, badges, gradient } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -335,6 +354,7 @@ app.put('/api/materials/:id', (req, res) => {
   }
 
   res.json({ ok: true, materials: getAllMaterials() });
+  await syncDB();
 });
 
 // Delete material
@@ -354,7 +374,7 @@ app.delete('/api/materials/:id', async (req, res) => {
     db.prepare('DELETE FROM material_files WHERE material_id = ?').run(materialId);
     db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
     // Real-time backup
-    await uploadDB().catch(e => console.error('Sync failed:', e));
+    await syncDB();
   }
 
   res.json({ ok: true, materials: getAllMaterials() });
@@ -515,12 +535,6 @@ async function setupDBSync() {
     }
   }
   initDB();
-  // Auto-save every 60 seconds
-  if (USE_R2) {
-    setInterval(() => {
-      uploadDB().catch(e => console.error('Auto-save failed:', e.message));
-    }, 60000);
-  }
 }
 
 async function main() {
