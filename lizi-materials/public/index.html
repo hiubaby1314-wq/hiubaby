@@ -472,8 +472,7 @@
     let currentCat = '人物';
     let currentSearch = '';
     let currentPage = 1;
-    const perPage = 10;
-    const MATERIALS_LOCKED = true; // 素材锁定，禁止修改
+        const perPage = 10;
 
     // Try to restore session from localStorage
     try {
@@ -805,7 +804,7 @@
           return '<span class="'+cls+'">'+ext+'</span>';
         }).join('');
 
-        const settingsIcon = (currentUser && currentUser.role === 'admin' && !MATERIALS_LOCKED) ?
+        const settingsIcon = (currentUser && currentUser.role === 'admin') ?
           '<div class="card-settings-wrap"><button class="card-settings-btn" data-settings-idx="'+m.id+'" onclick="event.stopPropagation();toggleSettingsById('+m.id+', this)">⚙</button><div class="card-settings-menu" id="settingsMenu'+m.id+'" style="display:none">'+
             '<div class="settings-menu-section"><label class="settings-menu-label">標籤</label>'+
             '<div style="display:flex;gap:6px;margin-top:4px">'+
@@ -889,11 +888,6 @@
       document.getElementById('adminPanel').style.display = isAdmin ? 'block' : 'none';
       document.getElementById('adminToolbar').style.display = isAdmin ? 'flex' : 'none';
       document.getElementById('bindBar').style.display = currentUser ? 'flex' : 'none';
-      // Hide material edit buttons when locked
-      if (MATERIALS_LOCKED) {
-        document.getElementById('addMaterialBtn').style.display = 'none';
-        document.getElementById('batchAddBtn').style.display = 'none';
-      }
       if (isAdmin) renderAdminUsers();
     }
 
