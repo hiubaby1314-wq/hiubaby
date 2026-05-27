@@ -12,6 +12,7 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
 const USE_R2 = !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+const MATERIALS_LOCKED = process.env.MATERIALS_LOCKED === 'true' || process.env.MATERIALS_LOCKED === '1';
 const DB_KEY = 'lizi.db';
 const DB_PATH = path.join(__dirname, 'data', 'lizi.db');
 let db;
@@ -283,6 +284,7 @@ app.get('/api/materials', (req, res) => {
 
 // Add material with file uploads
 app.post('/api/materials', upload.array('files', 20), async (req, res) => {
+  if (MATERIALS_LOCKED) return res.json({ ok: false, error: '素材已锁定，无法修改' });
   const { username, name, cat, badges, gradient, overwrite } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -336,6 +338,7 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
 
 // Upload files to existing material
 app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res) => {
+  if (MATERIALS_LOCKED) return res.json({ ok: false, error: '素材已锁定，无法修改' });
   const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -358,6 +361,7 @@ app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res
 
 // Update material
 app.put('/api/materials/:id', async (req, res) => {
+  if (MATERIALS_LOCKED) return res.json({ ok: false, error: '素材已锁定，无法修改' });
   const { username, name, cat, badges, gradient } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -383,6 +387,7 @@ app.put('/api/materials/:id', async (req, res) => {
 
 // Delete material
 app.delete('/api/materials/:id', async (req, res) => {
+  if (MATERIALS_LOCKED) return res.json({ ok: false, error: '素材已锁定，无法修改' });
   const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -406,6 +411,7 @@ app.delete('/api/materials/:id', async (req, res) => {
 
 // Reorder materials
 app.post('/api/materials/reorder', async (req, res) => {
+  if (MATERIALS_LOCKED) return res.json({ ok: false, error: '素材已锁定，无法修改' });
   const { username, order } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
