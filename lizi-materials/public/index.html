@@ -483,6 +483,11 @@
     } catch(e) {}
 
     // ===== UTILITY FUNCTIONS =====
+    // HTML escape to prevent XSS
+    function escapeHtml(text) {
+      if (text == null) return '';
+      return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    }
     // Traditional to Simplified Chinese conversion mapping
     const t2sMap = {
       '個':'个','麼':'么','為':'为','裡':'里','麵':'面','髮':'发','鬥':'斗',
@@ -793,9 +798,10 @@
           return '<span class="badge '+cls+'">'+b+'</span>';
         }).join('');
 
-        const files = (m.files||[]).map(f => {
-          const cls = f === 'fla' ? 'file-tag fla' : 'file-tag';
-          return '<span class="'+cls+'">.'+f+'</span>';
+        const files = (m.uploadedFiles||[]).map(f => {
+          const ext = (f.ext||'').toLowerCase();
+          const cls = ext === '.fla' ? 'file-tag fla' : 'file-tag';
+          return '<span class="'+cls+'">'+ext+'</span>';
         }).join('');
 
         const settingsIcon = (currentUser && currentUser.role === 'admin') ?
@@ -839,7 +845,7 @@
 
         const card = document.createElement('div');
         card.className = 'card';
-        card.innerHTML = '<div class="card-img"><div class="card-badge">'+badges+'</div>'+cardImgHtml+downloadSection+'</div>'+settingsIcon+'<div class="card-files">'+files+'</div><div class="card-footer"><span class="card-name">'+m.name+'</span><span class="card-preview" onclick="event.stopPropagation();openPreview('+realIdx+')">预览 ▶</span></div>';
+        card.innerHTML = '<div class="card-img"><div class="card-badge">'+badges+'</div>'+cardImgHtml+downloadSection+'</div>'+settingsIcon+'<div class="card-files">'+files+'</div><div class="card-footer"><span class="card-name">'+escapeHtml(m.name)+'</span><span class="card-preview" onclick="event.stopPropagation();openPreview('+realIdx+')">预览 ▶</span></div>';
 
         card.addEventListener('click', function(e) {
           if (e.target.closest('.card-settings-btn') || e.target.closest('.settings-menu-btn') || e.target.closest('.download-lock-btn') || e.target.closest('.card-preview')) return;
@@ -946,12 +952,12 @@
         return;
       }
       list.innerHTML = d.requests.map((r, i) => {
-        let html = '<div class="request-item"><div class="req-header"><span style="font-weight:500;font-size:13px">'+r.user+'</span><span class="req-time">'+r.time+'</span></div>';
-        html += '<div class="req-content">'+r.content+'</div>';
-        if (r.contact) html += '<div style="margin-top:4px;font-size:12px;color:#6b7280">联络方式：'+r.contact+'</div>';
+        let html = '<div class="request-item"><div class="req-header"><span style="font-weight:500;font-size:13px">'+escapeHtml(r.user)+'</span><span class="req-time">'+r.time+'</span></div>';
+        html += '<div class="req-content">'+escapeHtml(r.content)+'</div>';
+        if (r.contact) html += '<div style="margin-top:4px;font-size:12px;color:#6b7280">联络方式：'+escapeHtml(r.contact)+'</div>';
         if (r.images && r.images.length > 0) {
           html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
-          r.images.forEach(img => { html += '<img src="'+img+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="window.open(this.src)">'; });
+          r.images.forEach(img => { html += '<img src="'+escapeHtml(img)+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="window.open(this.src)">'; });
           html += '</div>';
         }
         html += (currentUser && currentUser.role === 'admin' ? '<button onclick="handleDeleteRequest('+i+')" style="margin-top:8px;background:#ef4444;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px">删除</button>' : '') + '</div>';
@@ -1048,7 +1054,7 @@
       materials[idx].cat = newCat;
       // Save to server
       try {
-        await fetch('/api/materials/'+idx, {
+        await fetch('/api/materials/'+materials[idx].id, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: currentUser.username, cat: newCat })
@@ -1067,7 +1073,7 @@
         m.badges = m.badges.filter(b => b !== badge);
       }
       try {
-        await fetch('/api/materials/'+idx, {
+        await fetch('/api/materials/'+m.id, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: currentUser.username, badges: m.badges.join(',') })
@@ -1159,8 +1165,8 @@
       } else {
         list.innerHTML = d.users.filter(u => u.bindings && u.bindings.length > 0).map(u =>
           '<div class="all-bind-user">'+
-            '<div class="bind-user-name">'+u.username+' <span style="font-weight:400;color:#9ca3ae;font-size:11px">('+u.role+')</span></div>'+
-            '<div class="bind-user-bindings">'+u.bindings.map(b => b.platform+'('+b.platformAccount+')').join('、')+'</div>'+
+            '<div class="bind-user-name">'+escapeHtml(u.username)+' <span style="font-weight:400;color:#9ca3ae;font-size:11px">('+escapeHtml(u.role)+')</span></div>'+
+            '<div class="bind-user-bindings">'+u.bindings.map(b => escapeHtml(b.platform)+'('+escapeHtml(b.platformAccount)+')').join('、')+'</div>'+
           '</div>'
         ).join('') || '<div style="text-align:center;padding:20px;color:#9ca3af">暂无绑定</div>';
       }
