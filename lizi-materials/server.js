@@ -564,6 +564,38 @@ async function setupDBSync() {
     }
   }
   
+  // Check if database is incomplete and restore from backup if needed
+  const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
+  console.log(`Current material count: ${materialCount}`);
+  
+  if (USE_R2 && materialCount < 50) {
+    console.log('Material count is too low, restoring from backup...');
+    const backupBuffer = await downloadFromR2('lizi_backup.db');
+    if (backupBuffer) {
+      // Close current connection
+      db.close();
+      // Restore from backup
+      fs.writeFileSync(DB_PATH, backupBuffer);
+      // Reopen database
+      const sqlite3 = require('better-sqlite3');
+      db = sqlite3(DB_PATH);
+      db.pragma('journal_mode = WAL');
+      
+      // Re-run migrations on restored database
+      for (const m of migrations) {
+        const result = db.prepare('UPDATE materials SET cat = ? WHERE cat = ?').run(m.to, m.from);
+        if (result.changes > 0) {
+          console.log(`Migration on backup: ${result.changes} materials updated from "${m.from}" to "${m.to}"`);
+        }
+      }
+      
+      const newCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
+      console.log(`Restored database with ${newCount} materials`);
+    } else {
+      console.log('Warning: lizi_backup.db not found in R2');
+    }
+  }
+  
   // Upload DB immediately on startup so R2 always has latest
   if (USE_R2) {
     await syncDB();
