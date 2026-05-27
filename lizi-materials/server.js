@@ -176,8 +176,20 @@ function rewriteR2Url(url) {
 
 // === DB Sync Helper ===
 async function syncDB() {
-  if (USE_R2) {
-    await uploadDB().catch(e => console.error('DB sync failed:', e.message));
+  if (!USE_R2) return;
+  try {
+    if (!s3Client || !db) {
+      console.error('DB sync: s3Client or db not initialized');
+      return;
+    }
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    const buffer = fs.readFileSync(DB_PATH);
+    await s3Client.client.send(new s3Client.PutObjectCommand({
+      Bucket: R2_BUCKET, Key: DB_KEY, Body: buffer, ContentType: 'application/octet-stream'
+    }));
+    console.log('DB synced to R2 (' + buffer.length + ' bytes)');
+  } catch(e) {
+    console.error('DB sync failed:', e.message);
   }
 }
 
@@ -225,12 +237,13 @@ app.post('/api/login', (req, res) => {
 });
 
 // Change password
-app.post('/api/changePwd', (req, res) => {
+app.post('/api/changePwd', async (req, res) => {
   const { username, oldPwd, newPwd } = req.body;
   if (!oldPwd || !newPwd || newPwd.length < 4) return res.json({ ok: false, error: '新密码至少4位' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.password !== hashPwd(oldPwd)) return res.json({ ok: false, error: '当前密码错误' });
   db.prepare('UPDATE users SET password = ?, force_pwd_change = 0 WHERE username = ?').run(hashPwd(newPwd), username);
+  await syncDB();
   res.json({ ok: true });
 });
 
@@ -248,8 +261,8 @@ app.post('/api/users', async (req, res) => {
   if (!username || username.length < 2) return res.json({ ok: false, error: '用户名至少2个字符' });
   if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) return res.json({ ok: false, error: '用户名已存在' });
   db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, 1)').run(username, hashPwd('123456'), role || 'user');
-  res.json({ ok: true });
   await syncDB();
+  res.json({ ok: true });
 });
 
 app.delete('/api/users/:username', async (req, res) => {
@@ -259,8 +272,8 @@ app.delete('/api/users/:username', async (req, res) => {
   if (!admin) return res.json({ ok: false, error: '权限不足' });
   if (targetUsername === 'admin') return res.json({ ok: false, error: '不能删除管理员' });
   db.prepare('DELETE FROM users WHERE username = ?').run(targetUsername);
-  res.json({ ok: true });
   await syncDB();
+  res.json({ ok: true });
 });
 
 // === Materials ===
@@ -306,8 +319,8 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
       .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
 
-  res.json({ ok: true, materials: getAllMaterials() });
   await syncDB();
+  res.json({ ok: true, materials: getAllMaterials() });
 });
 
 // Upload files to existing material
@@ -328,8 +341,8 @@ app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res
       .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
 
-  res.json({ ok: true, material: getMaterialWithFiles(materialId) });
   await syncDB();
+  res.json({ ok: true, material: getMaterialWithFiles(materialId) });
 });
 
 // Update material
@@ -353,8 +366,8 @@ app.put('/api/materials/:id', async (req, res) => {
     db.prepare(`UPDATE materials SET ${sets} WHERE id = ?`).run(...vals);
   }
 
-  res.json({ ok: true, materials: getAllMaterials() });
   await syncDB();
+  res.json({ ok: true, materials: getAllMaterials() });
 });
 
 // Delete material
@@ -381,7 +394,7 @@ app.delete('/api/materials/:id', async (req, res) => {
 });
 
 // Reorder materials
-app.post('/api/materials/reorder', (req, res) => {
+app.post('/api/materials/reorder', async (req, res) => {
   const { username, order } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
@@ -390,11 +403,12 @@ app.post('/api/materials/reorder', (req, res) => {
   order.forEach((idx, i) => {
     if (materials[idx]) stmt.run(i, materials[idx].id);
   });
+  await syncDB();
   res.json({ ok: true, materials: getAllMaterials() });
 });
 
 // === Download ===
-app.post('/api/download', (req, res) => {
+app.post('/api/download', async (req, res) => {
   const { username, materialIndex } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return res.json({ ok: false, error: '请先登录' });
@@ -412,7 +426,7 @@ app.post('/api/download', (req, res) => {
 
   // Increment download count
   db.prepare('UPDATE materials SET downloads = downloads + 1 WHERE id = ?').run(material.id);
-
+  await syncDB();
   res.json({ ok: true, material: getMaterialWithFiles(material.id) });
 });
 
@@ -439,6 +453,7 @@ app.post('/api/requests', upload.array('images', 5), async (req, res) => {
       .run(admin.username, username || '匿名', `收到新的素材需求: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`);
   }
 
+  await syncDB();
   res.json({ ok: true });
 });
 
@@ -450,11 +465,12 @@ app.get('/api/requests', (req, res) => {
   }))});
 });
 
-app.delete('/api/requests/:id', (req, res) => {
+app.delete('/api/requests/:id', async (req, res) => {
   const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
   if (!user) return res.json({ ok: false, error: '权限不足' });
   db.prepare('DELETE FROM requests WHERE id = ?').run(req.params.id);
+  await syncDB();
   res.json({ ok: true });
 });
 
@@ -535,6 +551,10 @@ async function setupDBSync() {
     }
   }
   initDB();
+  // Upload DB immediately on startup so R2 always has latest
+  if (USE_R2) {
+    await uploadDB();
+  }
 }
 
 async function main() {
