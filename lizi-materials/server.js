@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -17,10 +18,11 @@ const DB_PATH = path.join(__dirname, 'data', 'lizi.db');
 let db;
 
 // === Database ===
-function initDB() {
-  const sqlite3 = require('better-sqlite3');
+async function initDB() {
+  const ensureLoaded = require('./lib/sqlite-compat');
+  const SQL = await ensureLoaded();
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  db = sqlite3(DB_PATH);
+  db = new ensureLoaded.Database(SQL, DB_PATH);
   db.pragma('journal_mode = WAL');
 
   // Materials table
@@ -585,7 +587,7 @@ async function setupDBSync() {
       console.log('No DB found in R2, will create new');
     }
   }
-  initDB();
+  await initDB();
   
   // Migration: fix category names
   const migrations = [
@@ -613,8 +615,9 @@ async function setupDBSync() {
       // Restore from backup
       fs.writeFileSync(DB_PATH, backupBuffer);
       // Reopen database
-      const sqlite3 = require('better-sqlite3');
-      db = sqlite3(DB_PATH);
+      const ensureLoaded = require('./lib/sqlite-compat');
+      const SQL = await ensureLoaded();
+      db = new ensureLoaded.Database(SQL, DB_PATH);
       db.pragma('journal_mode = WAL');
       
       // Re-run migrations on restored database

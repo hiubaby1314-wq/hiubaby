@@ -4,18 +4,19 @@ services:
     env: node
     region: oregon
     plan: free
+    rootDir: lizi-materials
     buildCommand: npm install
     startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: R2_PUBLIC_URL
-        sync: false
+        value: https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev
       - key: R2_BUCKET
-        sync: false
+        value: lizi-sucai
       - key: R2_ACCOUNT_ID
-        sync: false
+        value: ae5c20bd97e1d547c9913ad516ece101
       - key: R2_ACCESS_KEY_ID
-        sync: false
+        value: 588443dd3da1433952bf8d7404cd1e0b
       - key: R2_SECRET_ACCESS_KEY
-        sync: false
+        value: 5bb03f7d4bd5459c2518773d0884cd275c77d441b78ce5135bd13384eaaa03b5
