@@ -243,21 +243,21 @@ app.post('/api/login', async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.password !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
 
-  // Check device lock
-  const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
-  if (lock) {
-    if (lock.device_id !== deviceId) {
-      return res.json({ ok: false, error: '该账号已在其他设备登录，无法在此设备使用' });
+  // Skip device lock for mobile devices
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.json({ ok: false, error: '该账号已在其他设备登录，无法在此设备使用' });
+      }
+      if (lock.is_mobile !== (isMobile ? 1 : 0)) {
+        db.prepare('UPDATE device_lock SET is_mobile = ? WHERE username = ?').run(isMobile ? 1 : 0, username);
+      }
+    } else {
+      db.prepare('INSERT INTO device_lock (username, device_id, is_mobile) VALUES (?, ?, ?)')
+        .run(username, deviceId, isMobile ? 1 : 0);
+      await syncDB();
     }
-    // Update mobile status if changed
-    if (lock.is_mobile !== (isMobile ? 1 : 0)) {
-      db.prepare('UPDATE device_lock SET is_mobile = ? WHERE username = ?').run(isMobile ? 1 : 0, username);
-    }
-  } else {
-    // First login, lock device
-    db.prepare('INSERT INTO device_lock (username, device_id, is_mobile) VALUES (?, ?, ?)')
-      .run(username, deviceId, isMobile ? 1 : 0);
-    await syncDB();
   }
 
   res.json({ ok: true, user: { username: user.username, role: user.role } });
@@ -451,14 +451,17 @@ app.post('/api/download', async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return res.json({ ok: false, error: '请先登录' });
 
-  // Check device lock
-  const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
-  if (lock) {
-    if (lock.device_id !== deviceId) {
-      return res.json({ ok: false, error: '设备不匹配，无法下载' });
-    }
-    if (lock.is_mobile) {
-      return res.json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+  // Check device lock (skip for mobile)
+  const { isMobile } = req.body;
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.json({ ok: false, error: '设备不匹配，无法下载' });
+      }
+      if (lock.is_mobile) {
+        return res.json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+      }
     }
   }
 
