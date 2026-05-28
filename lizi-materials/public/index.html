@@ -186,8 +186,8 @@
         <span class="user-role" id="userRoleBadge"></span>
       </div>
       <div class="user-actions">
-        <button class="user-action-btn" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生圖')">🌐 栗子AI生圖</button>
-        <button class="user-action-btn" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')">🎙️ 栗子配音</button>
+        <button class="user-action-btn desktop-only" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生圖')">🌐 栗子AI生圖</button>
+        <button class="user-action-btn desktop-only" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')">🎙️ 栗子配音</button>
         <button class="user-action-btn" onclick="openRequestModal()">📩 素材需求</button>
         <button class="user-action-btn admin-notif-btn" id="notifBtn" onclick="openNotifPanel()" style="display:none;position:relative">🔔<span class="notif-badge" id="notifBadge" style="display:none"></span></button>
         <button class="user-action-btn" onclick="openChangePwd()">修改密码</button>
@@ -198,8 +198,8 @@
     <div class="login-prompt" id="loginPrompt">
       <span>👋 欢迎使用栗子素材网，请先登录</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="login-prompt-btn" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生圖')" style="background:#6366f1">🌐 栗子AI生圖</button>
-        <button class="login-prompt-btn" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')" style="background:#10b981">🎙️ 栗子配音</button>
+        <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生圖')" style="background:#6366f1">🌐 栗子AI生圖</button>
+        <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')" style="background:#10b981">🎙️ 栗子配音</button>
         <button class="login-prompt-btn" onclick="openRequestModal()" style="background:#f59e0b">📩 素材需求</button>
         <button class="login-prompt-btn" onclick="openLogin()">立即登录</button>
       </div>
@@ -514,6 +514,11 @@
     // Detect if mobile device
     function isMobileDevice() {
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
+    // Hide desktop-only elements on mobile
+    if (isMobileDevice()) {
+      document.querySelectorAll('.desktop-only').forEach(el => el.style.display = 'none');
     }
 
     // HTML escape to prevent XSS
