@@ -478,6 +478,15 @@ app.post('/api/download', async (req, res) => {
   res.json({ ok: true, material: getMaterialWithFiles(material.id) });
 });
 
+// Track download (lightweight, no file data returned)
+app.post('/api/download/track', async (req, res) => {
+  const { username, materialId } = req.body;
+  if (!username || !materialId) return res.json({ ok: false });
+  db.prepare('UPDATE materials SET downloads = downloads + 1 WHERE id = ?').run(materialId);
+  await syncDB();
+  res.json({ ok: true });
+});
+
 // === Requests ===
 app.post('/api/requests', upload.array('images', 5), async (req, res) => {
   const { username, content, contact } = req.body;

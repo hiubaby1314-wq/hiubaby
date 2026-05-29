@@ -616,6 +616,15 @@
       }
     }
 
+    function trackDownload(materialId) {
+      if (!currentUser) return;
+      fetch('/api/download/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUser.username, materialId })
+      }).catch(() => {});
+    }
+
     async function doDownload(idx, btnEl) {
       if (!currentUser) { openLogin(); return; }
       if (isMobileDevice()) {
@@ -1342,14 +1351,12 @@
           let filesHtml = '';
           if (uploadedFiles.length > 0) {
             filesHtml = '<div class="download-files-list">' +
-              uploadedFiles.map((f, i) => '<a class="dl-file-btn" href="'+f.path+'" download="'+f.name+'" onclick="event.stopPropagation()">⬇ FLA文件</a>').join('') +
+              uploadedFiles.map((f, i) => '<a class="dl-file-btn" href="'+f.path+'" download="'+f.name+'" onclick="event.stopPropagation();trackDownload('+m.id+')">⬇ FLA文件</a>').join('') +
             '</div>';
           } else {
             filesHtml = '<div style="font-size:12px;color:#9ca3af;margin-bottom:8px">暂无FLA文件</div>';
           }
-          dlArea.innerHTML = filesHtml +
-            '<button onclick="closePreview();doDownload('+idx+')" style="padding:6px 18px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">下载</button>'+
-            '<div style="margin-top:6px;font-size:12px;color:#9ca3af">已下载 '+((m.downloads||0) > 0 ? m.downloads+'次' : '0次')+'</div>';
+          dlArea.innerHTML = filesHtml;
         } else {
           dlArea.innerHTML = '<div class="locked-msg">🔒 '+lockText+'</div>';
         }
