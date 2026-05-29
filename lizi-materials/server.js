@@ -582,6 +582,49 @@ app.get('/api/bindings/all', (req, res) => {
   res.json({ ok: true, users: usersWithBindings });
 });
 
+// === Revert to Stable ===
+app.post('/api/revert-stable', async (req, res) => {
+  const { username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
+  
+  if (!USE_R2 || !s3Client) {
+    return res.json({ ok: false, error: 'R2 未配置，无法恢复' });
+  }
+  
+  try {
+    console.log('Reverting to stable DB from R2...');
+    const backupBuffer = await downloadFromR2('lizi_backup.db');
+    if (!backupBuffer) {
+      return res.json({ ok: false, error: 'R2 中找不到备份数据库 lizi_backup.db' });
+    }
+    
+    // Close current DB
+    db.close();
+    
+    // Write backup to DB path
+    fs.writeFileSync(DB_PATH, backupBuffer);
+    console.log('DB file restored from backup (' + backupBuffer.length + ' bytes)');
+    
+    // Re-init DB
+    const ensureLoaded = require('./lib/sqlite-compat');
+    const SQL = await ensureLoaded();
+    db = new ensureLoaded.Database(SQL, DB_PATH);
+    db.pragma('journal_mode = WAL');
+    
+    const count = db.prepare('SELECT COUNT(*) as c FROM materials').get().c;
+    console.log('DB restored with ' + count + ' materials');
+    
+    // Sync back to R2
+    await syncDB();
+    
+    res.json({ ok: true, message: '恢复成功', materialCount: count });
+  } catch (e) {
+    console.error('Revert failed:', e);
+    res.json({ ok: false, error: '恢复失败: ' + e.message });
+  }
+});
+
 // === Start ===
 async function setupDBSync() {
   if (USE_R2) {

@@ -178,6 +178,12 @@
       </div>
       <div class="admin-msg" id="adminMsg"></div>
       <div class="admin-user-list" id="adminUserList"></div>
+      
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
+        <h4 style="font-size:14px;margin-bottom:8px">🔧 系統維護</h4>
+        <button class="admin-add-btn" id="revertStableBtn" style="background:#dc2626" onclick="revertToStable()">⚠️ 恢復到穩定版本</button>
+        <div class="admin-msg" id="revertMsg"></div>
+      </div>
     </div>
 
     <div class="user-bar" id="userBar" style="display:none">
@@ -984,6 +990,42 @@
       document.getElementById('confirmPwd').value = '';
     }
 
+    async function revertToStable() {
+      if (!confirm('⚠️ 確定要恢復到穩定版本嗎？\n\n這會從 R2 備份恢復數據庫，當前未保存的變更可能會丟失。')) {
+        return;
+      }
+      const btn = document.getElementById('revertStableBtn');
+      const msg = document.getElementById('revertMsg');
+      btn.disabled = true;
+      btn.textContent = '恢復中...';
+      msg.textContent = '正在從 R2 恢復備份數據庫...';
+      msg.style.color = '#059669';
+      
+      try {
+        const r = await fetch('/api/revert-stable', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ username: currentUser.username })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          msg.textContent = '✅ 恢復成功！已恢復 ' + d.materialCount + ' 個素材。頁面將在 3 秒後重新整理...';
+          msg.style.color = '#059669';
+          setTimeout(() => location.reload(), 3000);
+        } else {
+          msg.textContent = '❌ 恢復失敗: ' + d.error;
+          msg.style.color = '#dc2626';
+          btn.disabled = false;
+          btn.textContent = '⚠️ 恢復到穩定版本';
+        }
+      } catch (e) {
+        msg.textContent = '❌ 請求失敗: ' + e.message;
+        msg.style.color = '#dc2626';
+        btn.disabled = false;
+        btn.textContent = '⚠️ 恢復到穩定版本';
+      }
+    }
+    
     function doLogout() {
       currentUser = null;
       try { localStorage.removeItem('lz_user'); } catch(e) {}
