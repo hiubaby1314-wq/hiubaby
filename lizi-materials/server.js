@@ -745,7 +745,7 @@ app.post('/api/snapshot/restore', async (req, res) => {
 });
 
 // === SEO: sitemap & robots.txt ===
-const SITE_URL = process.env.SITE_URL || 'https://lizisucaiwang.online';
+const SITE_URL = process.env.SITE_URL || 'https://lizi-sucai.onrender.com';
 
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
