@@ -80,7 +80,9 @@ module.exports.Database = class CompatDB {
       },
       run(...params) {
         db.run(sql, params);
-        self._queueSave();
+        // IMPORTANT: Capture these BEFORE _queueSave(), because
+        // db.export() inside _flushSave() resets last_insert_rowid
+        // and getRowsModified to 0.
         let lastId = 0;
         try {
           const r = db.exec('SELECT last_insert_rowid() as id');
@@ -90,6 +92,7 @@ module.exports.Database = class CompatDB {
         try {
           changes = db.getRowsModified();
         } catch (e) {}
+        self._queueSave();
         return { lastInsertRowid: lastId, changes };
       }
     };
