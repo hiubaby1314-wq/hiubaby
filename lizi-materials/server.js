@@ -402,12 +402,23 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
 
   // Upload files
   const files = req.files || [];
-  for (const f of files) {
-    const ext = path.extname(f.originalname);
-    const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
-    const url = await uploadToR2(key, f.buffer, f.mimetype);
-    db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
+  try {
+    for (const f of files) {
+      const ext = path.extname(f.originalname);
+      const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+      const url = await uploadToR2(key, f.buffer, f.mimetype);
+      db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
+    }
+  } catch (uploadErr) {
+    console.error('File upload failed, cleaning up material:', uploadErr.message);
+    // Clean up: delete material record if no files were uploaded successfully
+    const uploadedCount = db.prepare('SELECT COUNT(*) as c FROM material_files WHERE material_id = ?').get(materialId).c;
+    if (uploadedCount === 0) {
+      db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
+      await syncDB();
+      return res.json({ ok: false, error: '文件上传失败：' + uploadErr.message });
+    }
   }
 
   // Check if only one file uploaded (should be FLA + PNG/GIF)
