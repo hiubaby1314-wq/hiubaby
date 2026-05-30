@@ -677,7 +677,9 @@
     }
 
     async function apiUpdateMaterial(idx, m) {
-      const r = await fetch('/api/materials/' + idx, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...m, username: currentUser.username }) });
+      const mat = materials[idx];
+      if (!mat) return { ok: false, error: '素材不存在' };
+      const r = await fetch('/api/materials/' + mat.id, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...m, username: currentUser.username }) });
       const d = await r.json();
       if (d.ok) { materials = d.materials; renderCards(); }
       return d;
@@ -786,8 +788,8 @@
       }
       list.innerHTML = d.notifications.reverse().map((n, i) =>
         '<div class="notif-item'+(n.read?'':' unread')+'" onclick="markNotifRead('+i+')">'+
-          '<div class="notif-from">'+(n.from_user||'系统')+'</div>'+
-          '<div class="notif-msg">'+n.message+'</div>'+
+          '<div class="notif-from">'+escapeHtml(n.from_user||'系统')+'</div>'+
+          '<div class="notif-msg">'+escapeHtml(n.message)+'</div>'+
           '<div class="notif-time">'+new Date(n.time).toLocaleString('zh-CN')+'</div>'+
         '</div>'
       ).join('');
@@ -1177,7 +1179,7 @@
 
     async function moveMaterial(idx, direction) {
       // Sort first to get current display order
-      materials.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      materials.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
       const newIdx = idx + direction;
       if (newIdx < 0 || newIdx >= materials.length) return;
 
@@ -1186,8 +1188,8 @@
       materials[idx] = materials[newIdx];
       materials[newIdx] = temp;
 
-      // Update sortOrder
-      materials.forEach((m, i) => m.sortOrder = i);
+      // Update sort_order
+      materials.forEach((m, i) => m.sort_order = i);
 
       // Save to server
       try {
@@ -1444,15 +1446,6 @@
       const msg = document.getElementById('loginMsg');
       if (!username || !password) { msg.textContent = '请输入用户名和密码'; msg.className = 'modal-msg error'; return; }
       let d = await apiLogin(username, password);
-      // If server rejects password, check localStorage fallback
-      if (!d.ok) {
-        try {
-          const saved = JSON.parse(localStorage.getItem('lz_passwords') || '{}');
-          if (saved[username] && saved[username] === password) {
-            d = { ok: true, user: { username, role: 'user' } };
-          }
-        } catch(e) {}
-      }
       if (!d.ok) { msg.textContent = d.error || '登录失败'; msg.className = 'modal-msg error'; return; }
       currentUser = d.user;
       try { localStorage.setItem('lz_user', JSON.stringify(currentUser)); } catch(e) {}
@@ -1503,12 +1496,7 @@
       if (newPwd !== confirmPwd) { msg.textContent = '两次密码不一致'; msg.className = 'modal-msg error'; return; }
       const d = await apiChangePwd(oldPwd, newPwd);
       if (!d.ok) { msg.textContent = d.error; msg.className = 'modal-msg error'; return; }
-      // Save new password to localStorage as fallback
-      try {
-        const saved = JSON.parse(localStorage.getItem('lz_passwords') || '{}');
-        saved[currentUser.username] = newPwd;
-        localStorage.setItem('lz_passwords', JSON.stringify(saved));
-      } catch(e) {}
+      // Password changed successfully
       msg.textContent = '密码修改成功！';
       msg.className = 'modal-msg';
       setTimeout(() => { document.getElementById('changePwdModal').classList.remove('active'); }, 500);
@@ -1591,7 +1579,9 @@
 
     // API for uploading files to existing material
     async function apiUploadMaterialFiles(idx, formData) {
-      const r = await fetch('/api/materials/' + idx + '/upload', { method:'POST', body: formData });
+      const mat = materials[idx];
+      if (!mat) return { ok: false, error: '素材不存在' };
+      const r = await fetch('/api/materials/' + mat.id + '/upload', { method:'POST', body: formData });
       const d = await r.json();
       if (d.ok) { materials[idx] = d.material; renderCards(); }
       return d;
@@ -1878,23 +1868,6 @@
     // ===== INIT =====
     updateUserBar();
     loadMaterials();
-    // Try to auto-login if there's a saved session with password
-    (async function autoLogin() {
-      if (!currentUser) return;
-      try {
-        const saved = JSON.parse(localStorage.getItem('lz_passwords') || '{}');
-        const pwd = saved[currentUser.username];
-        if (pwd) {
-          const d = await apiLogin(currentUser.username, pwd);
-          if (d.ok) {
-            currentUser = d.user;
-            try { localStorage.setItem('lz_user', JSON.stringify(currentUser)); } catch(e) {}
-            updateUserBar();
-          }
-        }
-      } catch(e) {}
-    })();
-
     // === App Popup ===
     function openAppPopup(url, title) {
       let overlay = document.getElementById('appPopupOverlay');
