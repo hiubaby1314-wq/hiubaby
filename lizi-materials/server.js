@@ -724,6 +724,61 @@ app.post('/api/snapshot/restore', async (req, res) => {
   }
 });
 
+// === SEO: sitemap & robots.txt ===
+const SITE_URL = 'https://lizi-sucai.onrender.com';
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send([
+    'User-agent: *',
+    'Allow: /',
+    `Sitemap: ${SITE_URL}/sitemap.xml`
+  ].join('\n'));
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  let materials = [];
+  try {
+    materials = db.prepare('SELECT id, cat, name, created_at FROM materials ORDER BY sort_order DESC, id DESC').all();
+  } catch (e) {}
+
+  const now = new Date().toISOString().split('T')[0];
+  const urls = [
+    { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', lastmod: now },
+    { loc: SITE_URL + '/?cat=表情包', changefreq: 'daily', priority: '0.8', lastmod: now },
+    { loc: SITE_URL + '/?cat=人物', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/?cat=背景图', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/?cat=道具栏', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/?cat=特效', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/?cat=画师寄售', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/?cat=限时优惠', changefreq: 'weekly', priority: '0.6', lastmod: now },
+  ];
+
+  materials.forEach(m => {
+    urls.push({
+      loc: `${SITE_URL}/?id=${m.id}`,
+      changefreq: 'weekly',
+      priority: '0.6',
+      lastmod: (m.created_at || now).split(' ')[0]
+    });
+  });
+
+  const xml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...urls.map(u => `  <url>
+    <loc>${u.loc}</loc>
+    <lastmod>${u.lastmod}</lastmod>
+    <changefreq>${u.changefreq}</changefreq>
+    <priority>${u.priority}</priority>
+  </url>`),
+    '</urlset>'
+  ].join('\n');
+
+  res.type('application/xml');
+  res.send(xml);
+});
+
 // === Start ===
 async function setupDBSync() {
   if (USE_R2) {
