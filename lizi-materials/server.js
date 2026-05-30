@@ -319,6 +319,7 @@ app.post('/api/login', async (req, res) => {
       }
       if (lock.is_mobile !== (isMobile ? 1 : 0)) {
         db.prepare('UPDATE device_lock SET is_mobile = ? WHERE username = ?').run(isMobile ? 1 : 0, username);
+        await syncDB();
       }
     } else {
       db.prepare('INSERT INTO device_lock (username, device_id, is_mobile) VALUES (?, ?, ?)')
@@ -605,17 +606,18 @@ app.get('/api/notifications', (req, res) => {
   res.json({ ok: true, notifications: notifs, unread });
 });
 
-app.post('/api/notifications/read', (req, res) => {
+app.post('/api/notifications/read', async (req, res) => {
   const { username } = req.body;
   // Verify user exists
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return res.json({ ok: false, error: '用户不存在' });
   db.prepare('UPDATE notifications SET is_read = 1 WHERE user = ?').run(username);
+  await syncDB();
   res.json({ ok: true });
 });
 
 // === Bindings ===
-app.post('/api/bindings', (req, res) => {
+app.post('/api/bindings', async (req, res) => {
   const { username, platform, platformAccount } = req.body;
   if (!platform || !platformAccount) return res.json({ ok: false, error: '请填写完整信息' });
   const existing = db.prepare('SELECT id FROM bindings WHERE username = ? AND platform = ?').get(username, platform);
@@ -624,6 +626,7 @@ app.post('/api/bindings', (req, res) => {
   } else {
     db.prepare('INSERT INTO bindings (username, platform, platform_account) VALUES (?, ?, ?)').run(username, platform, platformAccount);
   }
+  await syncDB();
   res.json({ ok: true });
 });
 
@@ -632,9 +635,10 @@ app.get('/api/bindings', (req, res) => {
   res.json({ ok: true, bindings });
 });
 
-app.delete('/api/bindings/:platform', (req, res) => {
+app.delete('/api/bindings/:platform', async (req, res) => {
   const { username } = req.body;
   db.prepare('DELETE FROM bindings WHERE username = ? AND platform = ?').run(username, req.params.platform);
+  await syncDB();
   res.json({ ok: true });
 });
 
@@ -740,7 +744,12 @@ async function setupDBSync() {
     { from: '背景', to: '背景图' },
     { from: '道具', to: '道具栏' }
   ];
-  
+
+  // Clean up stale is_snapshot column from old DB versions
+  try {
+    db.prepare('UPDATE materials SET is_snapshot = 0 WHERE is_snapshot = 1').run();
+  } catch (e) {}
+
   for (const m of migrations) {
     const result = db.prepare('UPDATE materials SET cat = ? WHERE cat = ?').run(m.to, m.from);
     if (result.changes > 0) {
