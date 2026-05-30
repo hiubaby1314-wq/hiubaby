@@ -128,6 +128,81 @@ async function initR2() {
   console.log('R2 storage configured.');
 }
 
+// === Snapshot: manual save/restore ===
+const SNAPSHOT_PATH = path.join(__dirname, 'data', 'materials-snapshot.json');
+
+// Save current materials to snapshot (manual trigger only)
+async function saveSnapshot() {
+  try {
+    const materials = db.prepare('SELECT * FROM materials ORDER BY sort_order, id DESC').all();
+    const snapshot = materials.map(m => {
+      const files = db.prepare('SELECT name, path, ext, size, mime FROM material_files WHERE material_id = ? ORDER BY id').all(m.id);
+      return {
+        name: m.name,
+        cat: m.cat,
+        badges: JSON.parse(m.badges || '["版权","new"]'),
+        gradient: m.gradient,
+        sort_order: m.sort_order,
+        downloads: m.downloads,
+        files: files.map(f => ({ name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
+      };
+    });
+
+    fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
+    fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), 'utf-8');
+
+    // Sync snapshot to R2
+    if (USE_R2 && s3Client) {
+      const buffer = fs.readFileSync(SNAPSHOT_PATH);
+      await s3Client.client.send(new s3Client.PutObjectCommand({
+        Bucket: R2_BUCKET, Key: 'materials-snapshot.json', Body: buffer, ContentType: 'application/json'
+      }));
+    }
+    console.log(`Snapshot saved: ${snapshot.length} materials`);
+    return snapshot.length;
+  } catch (e) {
+    console.error('Snapshot save failed:', e.message);
+    throw e;
+  }
+}
+
+// Restore materials from snapshot (manual trigger only)
+function restoreSnapshot() {
+  if (!fs.existsSync(SNAPSHOT_PATH)) {
+    throw new Error('No snapshot found');
+  }
+  const snapshot = JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf-8'));
+  
+  // Clear all materials
+  db.exec('DELETE FROM material_files');
+  db.exec('DELETE FROM materials');
+  
+  const insertMat = db.prepare(`
+    INSERT INTO materials (name, cat, badges, gradient, sort_order, downloads)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const insertFile = db.prepare(`
+    INSERT INTO material_files (material_id, name, path, ext, size, mime)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const item of snapshot) {
+    const result = insertMat.run(
+      item.name, item.cat,
+      JSON.stringify(item.badges || ['版权', 'new']),
+      item.gradient ?? 0,
+      item.sort_order ?? 0,
+      item.downloads ?? 0
+    );
+    const matId = result.lastInsertRowid;
+    for (const f of (item.files || [])) {
+      insertFile.run(matId, f.name, f.path, f.ext, f.size || 0, f.mime || '');
+    }
+  }
+  console.log(`Snapshot restored: ${snapshot.length} materials`);
+  return snapshot.length;
+}
+
 async function downloadFromR2(key) {
   if (!s3Client) return null;
   try {
@@ -200,14 +275,6 @@ async function syncDB() {
   } catch(e) {
     console.error('DB sync failed:', e.message);
   }
-}
-
-// === DB Auto-sync ===
-// Fallback sync every 30s in case immediate sync misses something
-if (USE_R2) {
-  setInterval(() => {
-    syncDB().catch(e => console.error('Auto-sync failed:', e.message));
-  }, 30000);
 }
 
 // === Helper: get material with files ===
@@ -625,6 +692,34 @@ app.post('/api/revert-stable', async (req, res) => {
   }
 });
 
+// === Snapshot Save/Restore (manual only) ===
+app.post('/api/snapshot/save', async (req, res) => {
+  const { username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
+  
+  try {
+    const count = await saveSnapshot();
+    res.json({ ok: true, message: `已保存 ${count} 个素材到快照`, materialCount: count });
+  } catch (e) {
+    res.json({ ok: false, error: '保存快照失败: ' + e.message });
+  }
+});
+
+app.post('/api/snapshot/restore', async (req, res) => {
+  const { username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
+  
+  try {
+    const count = restoreSnapshot();
+    await syncDB();
+    res.json({ ok: true, message: `已从快照恢复 ${count} 个素材`, materialCount: count, materials: getAllMaterials() });
+  } catch (e) {
+    res.json({ ok: false, error: '恢复快照失败: ' + e.message });
+  }
+});
+
 // === Start ===
 async function setupDBSync() {
   if (USE_R2) {
@@ -652,7 +747,7 @@ async function setupDBSync() {
       console.log(`Migration: ${result.changes} materials updated from "${m.from}" to "${m.to}"`);
     }
   }
-  
+
   // Check if database is incomplete and restore from backup if needed
   const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
   console.log(`Current material count: ${materialCount}`);

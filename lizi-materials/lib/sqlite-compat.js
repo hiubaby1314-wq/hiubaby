@@ -110,8 +110,7 @@ module.exports.Database = class CompatDB {
   _queueSave() {
     this._needsSave = true;
     if (!this._filePath) return;
-    if (this._writeTimer) clearTimeout(this._writeTimer);
-    this._writeTimer = setTimeout(() => this._flushSave(), 100);
+    this._flushSave();
   }
 
   _flushSave() {
