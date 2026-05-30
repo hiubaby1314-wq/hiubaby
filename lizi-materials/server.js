@@ -5,6 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
+// Traditional → Simplified Chinese converter
+const OpenCC = require('opencc-js');
+const t2sConverter = OpenCC.Converter({ from: 'tw', to: 'cn' });
+function toSimplified(text) {
+  if (!text || typeof text !== 'string') return text;
+  return t2sConverter(text);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev';
@@ -378,7 +386,8 @@ app.get('/api/materials', (req, res) => {
 
 // Add material with file uploads
 app.post('/api/materials', upload.array('files', 20), async (req, res) => {
-  const { username, name, cat, badges, gradient } = req.body;
+  const { username, cat, badges, gradient } = req.body;
+  const name = toSimplified(req.body.name);
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   if (!name) return res.json({ ok: false, error: '请输入名称' });
@@ -460,7 +469,7 @@ app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res
 
 // Update material
 app.put('/api/materials/:id', async (req, res) => {
-  const { username, name, cat, badges, gradient } = req.body;
+  const { username, cat, badges, gradient } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   const materialId = req.params.id;
@@ -468,7 +477,7 @@ app.put('/api/materials/:id', async (req, res) => {
   if (!material) return res.json({ ok: false, error: '素材不存在' });
 
   const updates = {};
-  if (name) updates.name = name;
+  if (req.body.name) updates.name = toSimplified(req.body.name);
   if (cat) updates.cat = cat;
   if (badges) updates.badges = JSON.stringify(Array.isArray(badges) ? badges : badges.split(',').map(s => s.trim()));
   if (gradient !== undefined) updates.gradient = parseInt(gradient);
