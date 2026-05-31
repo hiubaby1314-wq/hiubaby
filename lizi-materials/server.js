@@ -975,6 +975,57 @@ async function setupDBSync() {
     }
   }
 
+  // Migration: fix non-ASCII file paths in R2 (Chinese filenames cause 403 errors)
+  if (USE_R2) {
+    const filesWithBadPaths = db.prepare(
+      "SELECT id, name, path, ext, mime FROM material_files WHERE path NOT LIKE '%/uploads/%' AND path NOT LIKE '%/files/%'"
+    ).all();
+
+    if (filesWithBadPaths.length > 0) {
+      console.log(`Migration: Found ${filesWithBadPaths.length} files with non-ASCII paths, renaming...`);
+      for (const f of filesWithBadPaths) {
+        try {
+          let key = f.path;
+          const prefix = R2_PUBLIC_URL + '/';
+          if (key.startsWith(prefix)) key = key.slice(prefix.length);
+
+          // Check if key has non-ASCII chars
+          let hasNonAscii = false;
+          for (let i = 0; i < key.length; i++) {
+            if (key.charCodeAt(i) > 127) { hasNonAscii = true; break; }
+          }
+          if (!hasNonAscii) continue;
+
+          // Download from R2
+          const fileBuffer = await downloadFromR2(key);
+          if (!fileBuffer) {
+            console.log(`  SKIP: Cannot download ${key}`);
+            continue;
+          }
+
+          // Generate ASCII-safe key
+          const hash = crypto.createHash('md5').update(f.name).digest('hex').slice(0, 12);
+          const newKey = `files/${hash}${f.ext}`;
+
+          // Upload to new key
+          await s3Client.client.send(new s3Client.PutObjectCommand({
+            Bucket: R2_BUCKET, Key: newKey, Body: fileBuffer, ContentType: f.mime || 'application/octet-stream'
+          }));
+
+          // Delete old key
+          await s3Client.client.send(new s3Client.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+
+          // Update database
+          const newUrl = `${R2_PUBLIC_URL}/${newKey}`;
+          db.prepare('UPDATE material_files SET path = ? WHERE id = ?').run(newUrl, f.id);
+          console.log(`  Renamed: ${key} → ${newKey}`);
+        } catch(e) {
+          console.error(`  Error renaming ${f.name}: ${e.message}`);
+        }
+      }
+    }
+  }
+
   // Check if database is incomplete and restore from backup if needed
   const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
   console.log(`Current material count: ${materialCount}`);
