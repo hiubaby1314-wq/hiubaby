@@ -1201,6 +1201,59 @@ async function setupDBSync() {
     }
   }
   
+  // Migration: fix orphaned materials (materials with no files due to lastInsertRowid bug)
+  if (USE_R2) {
+    try {
+      const orphanedMaterials = db.prepare(
+        'SELECT m.id, m.name, m.created_at FROM materials m LEFT JOIN material_files mf ON m.id = mf.material_id WHERE mf.id IS NULL ORDER BY m.id'
+      ).all();
+      
+      if (orphanedMaterials.length > 0) {
+        console.log(`Migration: Found ${orphanedMaterials.length} orphaned materials, attempting to recover files from R2...`);
+        const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+        const r2Files = await s3Client.client.send(new ListObjectsV2Command({
+          Bucket: R2_BUCKET,
+          Prefix: 'uploads/',
+          MaxKeys: 1000
+        }));
+        
+        const r2FileMap = {};
+        for (const obj of (r2Files.Contents || [])) {
+          r2FileMap[obj.Key] = { size: obj.Size, modified: obj.LastModified };
+        }
+        
+        for (const mat of orphanedMaterials) {
+          const matTime = new Date(mat.created_at).getTime();
+          const matches = [];
+          
+          for (const [key, info] of Object.entries(r2FileMap)) {
+            const fileTime = info.modified.getTime();
+            if (Math.abs(fileTime - matTime) < 60000) {
+              const ext = path.extname(key).toLowerCase();
+              if (['.png', '.gif', '.jpg', '.jpeg', '.fla'].includes(ext)) {
+                matches.push({ key, ext, size: info.size, mime: ext === '.fla' ? 'application/octet-stream' : (ext === '.gif' ? 'image/gif' : ext === '.jpg' ? 'image/jpeg' : 'image/' + ext.slice(1)) });
+              }
+            }
+          }
+          
+          if (matches.length > 0) {
+            console.log(`  Material "${mat.name}" (id=${mat.id}): found ${matches.length} matching files`);
+            for (const m of matches) {
+              const url = `${R2_PUBLIC_URL}/${m.key}`;
+              db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
+                .run(mat.id, mat.name + m.ext, url, m.ext, m.size, m.mime);
+            }
+          } else {
+            console.log(`  Material "${mat.name}" (id=${mat.id}): no matching files found, deleting...`);
+            db.prepare('DELETE FROM materials WHERE id = ?').run(mat.id);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Migration (orphaned materials) failed:', e.message);
+    }
+  }
+  
   // Upload DB immediately on startup so R2 always has latest
   if (USE_R2) {
     await syncDB();
