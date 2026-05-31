@@ -999,6 +999,75 @@ app.get('/sitemap.xml', (req, res) => {
   res.send(xml);
 });
 
+// === Diagnostic Endpoint (test R2 upload/download) ===
+app.get('/api/debug/r2-test', async (req, res) => {
+  const results = { timestamp: new Date().toISOString() };
+  
+  // Check config
+  results.config = {
+    USE_R2,
+    R2_BUCKET: R2_BUCKET ? R2_BUCKET.substring(0, 10) + '...' : '(empty)',
+    R2_ACCOUNT_ID: R2_ACCOUNT_ID ? R2_ACCOUNT_ID.substring(0, 8) + '...' : '(empty)',
+    R2_ACCESS_KEY_ID: R2_ACCESS_KEY_ID ? 'set (' + R2_ACCESS_KEY_ID.substring(0, 8) + '...)' : '(empty)',
+    R2_SECRET_ACCESS_KEY: R2_SECRET_ACCESS_KEY ? 'set (' + R2_SECRET_ACCESS_KEY.length + ' chars)' : '(empty)',
+    R2_PUBLIC_URL,
+    s3ClientInitialized: !!s3Client,
+  };
+  
+  if (!USE_R2 || !s3Client) {
+    results.error = 'R2 not configured';
+    return res.json(results);
+  }
+
+  // Test 1: Upload a tiny test file
+  const testKey = 'uploads/_diag_test_' + Date.now() + '.txt';
+  const testContent = Buffer.from('R2 diagnostic test - ' + new Date().toISOString());
+  try {
+    const url = await uploadToR2(testKey, testContent, 'text/plain');
+    results.upload = { ok: true, url };
+  } catch(e) {
+    results.upload = { ok: false, error: e.message, name: e.name, code: e.Code, statusCode: e.$metadata?.httpStatusCode };
+    return res.json(results);
+  }
+
+  // Test 2: Download it back
+  try {
+    const buf = await downloadFromR2(testKey);
+    results.download = { ok: !!buf, size: buf ? buf.length : 0, content: buf ? buf.toString() : null };
+  } catch(e) {
+    results.download = { ok: false, error: e.message };
+  }
+
+  // Test 3: Verify public URL is accessible
+  try {
+    const publicUrl = `${R2_PUBLIC_URL}/${testKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const fetchRes = await fetch(publicUrl, { signal: controller.signal });
+    clearTimeout(timeout);
+    results.publicAccess = { ok: fetchRes.ok, status: fetchRes.status, url: publicUrl };
+  } catch(e) {
+    results.publicAccess = { ok: false, error: e.message };
+  }
+
+  // Test 4: Cleanup
+  try {
+    await deleteFromR2(`${R2_PUBLIC_URL}/${testKey}`);
+    results.cleanup = { ok: true };
+  } catch(e) {
+    results.cleanup = { ok: false, error: e.message };
+  }
+
+  // Test 5: Check multer config
+  results.multer = {
+    storage: 'memoryStorage',
+    fileSizeLimit: '100MB',
+    maxFiles: 20
+  };
+
+  res.json(results);
+});
+
 // === Multer Error Handler (must be after all routes) ===
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
