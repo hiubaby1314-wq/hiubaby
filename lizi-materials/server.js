@@ -383,7 +383,7 @@ app.get('/cat/:catName', (req, res) => {
 });
 
 const storage = multer.memoryStorage();
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
 function hashPwd(p) { return crypto.createHash('md5').update(p).digest('hex'); }
 
@@ -546,27 +546,46 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
 
   // Upload files
   const files = req.files || [];
-  try {
-    for (const f of files) {
+  console.log(`[Upload] Material "${name}" (id pending): received ${files.length} files from multer`);
+  if (files.length > 0) {
+    files.forEach((f, i) => console.log(`  file[${i}]: ${f.originalname} (${f.size} bytes, ${f.mimetype})`));
+  }
+
+  // Reject if no files were received
+  if (files.length === 0) {
+    console.warn(`[Upload] WARNING: No files received for material "${name}". Deleting record.`);
+    try { db.prepare('DELETE FROM materials WHERE id = ?').run(materialId); } catch(e) {}
+    await syncDB();
+    return res.json({ ok: false, error: '未收到任何文件，请重新选择文件后上传' });
+  }
+
+  let uploadedCount = 0;
+  let uploadErrors = [];
+  for (const f of files) {
+    try {
       const ext = path.extname(f.originalname);
       const key = `uploads/${crypto.randomUUID()}${ext}`;
       const url = await uploadToR2(key, f.buffer, f.mimetype);
       db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
         .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
-    }
-  } catch (uploadErr) {
-    console.error('File upload failed, cleaning up material:', uploadErr.message);
-    // Clean up: delete material record if no files were uploaded successfully
-    const uploadedCount = db.prepare('SELECT COUNT(*) as c FROM material_files WHERE material_id = ?').get(materialId).c;
-    if (uploadedCount === 0) {
-      db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
-      await syncDB();
-      return res.json({ ok: false, error: '文件上传失败：' + uploadErr.message });
+      uploadedCount++;
+      console.log(`  Uploaded: ${f.originalname} -> ${url}`);
+    } catch (uploadErr) {
+      console.error(`[Upload] FAILED: ${f.originalname} - ${uploadErr.message}`);
+      uploadErrors.push(`${f.originalname}: ${uploadErr.message}`);
     }
   }
 
+  // If ALL files failed, delete the material record
+  if (uploadedCount === 0) {
+    console.error(`[Upload] All files failed for "${name}". Deleting material record.`);
+    db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
+    await syncDB();
+    return res.json({ ok: false, error: '文件上传失败：' + uploadErrors.join('; ') });
+  }
+
   // Check if only one file uploaded (should be FLA + PNG/GIF)
-  const fileCount = files.length;
+  const fileCount = uploadedCount;
   const hasFla = files.some(f => path.extname(f.originalname).toLowerCase() === '.fla');
   const hasImage = files.some(f => ['.png', '.gif', '.jpg', '.jpeg'].includes(path.extname(f.originalname).toLowerCase()));
   let warning = '';
@@ -574,6 +593,9 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
     warning = hasFla ? '只上傳了 FLA 文件，缺少 PNG/GIF 圖片' : '只上傳了圖片文件，缺少 FLA 源文件';
   } else if (fileCount >= 2 && (!hasFla || !hasImage)) {
     warning = !hasFla ? '缺少 FLA 源文件' : '缺少 PNG/GIF 圖片文件';
+  }
+  if (uploadErrors.length > 0) {
+    warning += (warning ? '\n' : '') + '部分文件上传失败：' + uploadErrors.join('; ');
   }
 
   await syncDB();
@@ -975,6 +997,22 @@ app.get('/sitemap.xml', (req, res) => {
 
   res.type('application/xml');
   res.send(xml);
+});
+
+// === Multer Error Handler (must be after all routes) ===
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error(`[Multer Error] code=${err.code} message="${err.message}" field=${err.field || 'N/A'}`);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ ok: false, error: `文件过大（最大允许 100MB）` });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(413).json({ ok: false, error: `文件数量过多（最多 20 个）` });
+    }
+    return res.status(400).json({ ok: false, error: `文件上传错误：${err.message}` });
+  }
+  console.error('Unhandled error:', err);
+  res.status(500).json({ ok: false, error: '服务器内部错误' });
 });
 
 // === Start ===
