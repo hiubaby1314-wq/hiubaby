@@ -828,6 +828,13 @@ app.post('/api/revert-stable', async (req, res) => {
     // Block other requests during DB swap
     dbReady = false;
     
+    // === 备份当前帐号资料（密码、设备锁定、绑定、会话） ===
+    const currentUsers = db.prepare('SELECT * FROM users').all();
+    const currentDeviceLocks = db.prepare('SELECT * FROM device_lock').all();
+    const currentBindings = db.prepare('SELECT * FROM bindings').all();
+    const currentSessions = db.prepare('SELECT * FROM sessions').all();
+    console.log(`Preserving ${currentUsers.length} users, ${currentDeviceLocks.length} device locks, ${currentBindings.length} bindings`);
+    
     // Close current DB
     db.close();
     
@@ -841,8 +848,36 @@ app.post('/api/revert-stable', async (req, res) => {
     db = new ensureLoaded.Database(SQL, DB_PATH);
     db.pragma('journal_mode = WAL');
     
+    // === 恢复当前帐号资料（不影响密码） ===
+    // 清空备份中的帐号表，用当前数据覆盖
+    db.exec('DELETE FROM sessions');
+    db.exec('DELETE FROM device_lock');
+    db.exec('DELETE FROM bindings');
+    db.exec('DELETE FROM users');
+    
+    const insertUser = db.prepare('INSERT INTO users (id, username, password, role, force_pwd_change, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    for (const u of currentUsers) {
+      insertUser.run(u.id, u.username, u.password, u.role, u.force_pwd_change, u.created_at);
+    }
+    console.log(`Restored ${currentUsers.length} users (passwords preserved)`);
+    
+    const insertLock = db.prepare('INSERT INTO device_lock (id, username, device_id, is_mobile, locked_at) VALUES (?, ?, ?, ?, ?)');
+    for (const l of currentDeviceLocks) {
+      try { insertLock.run(l.id, l.username, l.device_id, l.is_mobile, l.locked_at); } catch(e) {}
+    }
+    
+    const insertBinding = db.prepare('INSERT INTO bindings (id, username, platform, platform_account, bind_time) VALUES (?, ?, ?, ?, ?)');
+    for (const b of currentBindings) {
+      try { insertBinding.run(b.id, b.username, b.platform, b.platform_account, b.bind_time); } catch(e) {}
+    }
+    
+    const insertSession = db.prepare('INSERT INTO sessions (id, username, device_id, token, created_at) VALUES (?, ?, ?, ?, ?)');
+    for (const s of currentSessions) {
+      try { insertSession.run(s.id, s.username, s.device_id, s.token, s.created_at); } catch(e) {}
+    }
+    
     const count = db.prepare('SELECT COUNT(*) as c FROM materials').get().c;
-    console.log('DB restored with ' + count + ' materials');
+    console.log('DB restored with ' + count + ' materials (accounts preserved)');
     
     // Sync back to R2
     await syncDB();
@@ -850,7 +885,7 @@ app.post('/api/revert-stable', async (req, res) => {
     // Unblock requests
     dbReady = true;
     
-    res.json({ ok: true, message: '恢复成功', materialCount: count });
+    res.json({ ok: true, message: '恢复成功（帐号密码已保留）', materialCount: count, userCount: currentUsers.length });
   } catch (e) {
     console.error('Revert failed:', e);
     dbReady = true; // Always unblock even on error
