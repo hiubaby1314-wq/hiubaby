@@ -10,9 +10,38 @@
   <meta name="theme-color" content="#ffffff">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <title>栗子素材网</title>
+  <title>栗子素材网 - 专业美术素材下载平台</title>
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="canonical" href="https://lizi-sucai.onrender.com/" />
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="栗子素材网 - 专业美术素材下载平台">
+  <meta property="og:description" content="提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件，支持在线预览，海量优质素材等你来下载">
+  <meta property="og:url" content="https://lizi-sucai.onrender.com/">
+  <meta property="og:site_name" content="栗子素材网">
+  <meta property="og:image" content="https://lizi-sucai.onrender.com/assets/assets/banner_optimized.jpg">
+  <meta property="og:locale" content="zh_CN">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="栗子素材网 - 专业美术素材下载平台">
+  <meta name="twitter:description" content="提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件，支持在线预览">
+  <meta name="twitter:image" content="https://lizi-sucai.onrender.com/assets/assets/banner_optimized.jpg">
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "栗子素材网",
+    "url": "https://lizi-sucai.onrender.com/",
+    "description": "专业美术素材下载平台，提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://lizi-sucai.onrender.com/?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif; background:#f5f5f5; color:#1f2937; line-height:1.5; }
@@ -162,9 +191,11 @@
     <span>微信扫码联系我们</span>
   </div>
 
+  <h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap">栗子素材网 - 专业美术素材下载平台，提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件</h1>
+
   <section class="carousel-wrap">
     <div class="carousel-track">
-      <div class="carousel-slide"><div class="carousel-slide-inner"><img src="assets/assets/banner_optimized.jpg" alt="栗子素材网"></div></div>
+      <div class="carousel-slide"><div class="carousel-slide-inner"><img src="assets/assets/banner_optimized.jpg" alt="栗子素材网 - 专业美术素材下载平台"></div></div>
     </div>
     <div class="carousel-notice">本站所有素材版权均已注册，未经允许禁止二次传播</div>
   </section>
@@ -1410,8 +1441,63 @@
       btn.classList.add('active');
       currentCat = btn.dataset.cat;
       currentPage = 1;
+      // Update URL for SEO-friendly routing
+      const catPath = '/cat/' + encodeURIComponent(currentCat);
+      history.pushState({ cat: currentCat }, '', catPath);
+      // Update canonical and OG tags dynamically
+      updateSEOTags(currentCat);
       renderCards();
     });
+
+    // Handle browser back/forward navigation
+    window.addEventListener('popstate', function(e) {
+      if (e.state && e.state.cat) {
+        switchCatFromURL(e.state.cat);
+      } else {
+        // Check URL path
+        const match = window.location.pathname.match(/^\/cat\/(.+)$/);
+        if (match) {
+          switchCatFromURL(decodeURIComponent(match[1]));
+        } else {
+          switchCatFromURL('人物');
+        }
+      }
+    });
+
+    function switchCatFromURL(cat) {
+      currentCat = cat;
+      currentPage = 1;
+      document.querySelectorAll('.cat-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.cat === cat);
+      });
+      updateSEOTags(cat);
+      renderCards();
+    }
+
+    function updateSEOTags(cat) {
+      const catDescriptions = {
+        '人物': '人物立绘素材，包含FLA源文件',
+        '表情包': '表情包素材下载，提供丰富的表情动画FLA源文件',
+        '画师寄售': '画师寄售素材，独家原创美术资源',
+        '背景图': '背景图素材，精美场景背景FLA源文件',
+        '道具栏': '道具栏素材，游戏道具图标FLA源文件',
+        '特效': '特效素材，动画特效FLA源文件',
+        '限时优惠': '限时优惠素材，特价优质美术资源'
+      };
+      const desc = catDescriptions[cat] || '专业美术素材下载平台';
+      const pageTitle = cat === '人物' ? '栗子素材网 - 专业美术素材下载平台' : cat + '素材 - 栗子素材网';
+      document.title = pageTitle;
+      // Update canonical
+      let canonical = document.querySelector('link[rel="canonical"]');
+      if (canonical) canonical.href = 'https://lizi-sucai.onrender.com/cat/' + encodeURIComponent(cat);
+      // Update OG tags
+      let ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle) ogTitle.content = pageTitle;
+      let ogUrl = document.querySelector('meta[property="og:url"]');
+      if (ogUrl) ogUrl.content = 'https://lizi-sucai.onrender.com/cat/' + encodeURIComponent(cat);
+      let ogDesc = document.querySelector('meta[property="og:description"]');
+      if (ogDesc) ogDesc.content = desc;
+    }
 
     document.getElementById('searchBtn').addEventListener('click', function() {
       currentSearch = document.getElementById('searchInput').value.trim();
@@ -1876,6 +1962,37 @@
     });
 
     // ===== INIT =====
+    // Check URL path for category routing
+    (function initFromURL() {
+      const match = window.location.pathname.match(/^\/cat\/(.+)$/);
+      if (match) {
+        const cat = decodeURIComponent(match[1]);
+        const validCats = ['人物', '表情包', '画师寄售', '背景图', '道具栏', '特效', '限时优惠'];
+        if (validCats.includes(cat)) {
+          currentCat = cat;
+          document.querySelectorAll('.cat-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cat === cat);
+          });
+          updateSEOTags(cat);
+        }
+      }
+      // Also handle legacy ?cat= and ?id= query params
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('cat')) {
+        const qcat = params.get('cat');
+        const validCats = ['人物', '表情包', '画师寄售', '背景图', '道具栏', '特效', '限时优惠'];
+        if (validCats.includes(qcat)) {
+          currentCat = qcat;
+          document.querySelectorAll('.cat-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cat === qcat);
+          });
+          // Redirect to clean URL
+          history.replaceState({ cat: qcat }, '', '/cat/' + encodeURIComponent(qcat));
+          updateSEOTags(qcat);
+        }
+      }
+    })();
+
     updateUserBar();
     loadMaterials();
     // Try to auto-login if there's a saved session with password

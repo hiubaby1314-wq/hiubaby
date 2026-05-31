@@ -280,6 +280,9 @@ async function deleteFromR2(url) {
   }
 }
 
+// === SEO Config ===
+const SITE_URL = process.env.SITE_URL || 'https://lizi-sucai.onrender.com';
+
 // === Middleware ===
 app.use((req, res, next) => {
   if (!dbReady) return res.status(503).json({ ok: false, error: '服务正在维护，请稍后再试' });
@@ -287,7 +290,92 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Cache headers for static assets
+app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), { maxAge: '7d', immutable: true }));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1d',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, max-age=0');
+    }
+  }
+}));
+
+// === SEO: Server-side rendering for category pages ===
+const VALID_CATS = ['人物', '表情包', '画师寄售', '背景图', '道具栏', '特效', '限时优惠'];
+const CAT_DESCRIPTIONS = {
+  '人物': '人物立绘素材，包含FLA源文件，支持在线预览',
+  '表情包': '表情包素材下载，提供丰富的表情动画FLA源文件',
+  '画师寄售': '画师寄售素材，独家原创美术资源',
+  '背景图': '背景图素材，精美场景背景FLA源文件下载',
+  '道具栏': '道具栏素材，游戏道具图标FLA源文件',
+  '特效': '特效素材，动画特效FLA源文件',
+  '限时优惠': '限时优惠素材，特价优质美术资源'
+};
+
+app.get('/cat/:catName', (req, res) => {
+  const catName = decodeURIComponent(req.params.catName);
+  if (!VALID_CATS.includes(catName)) {
+    return res.redirect(301, '/');
+  }
+
+  const fs2 = require('fs');
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  let html = fs2.readFileSync(indexPath, 'utf-8');
+
+  const catDesc = CAT_DESCRIPTIONS[catName] || '专业美术素材下载平台';
+  const pageTitle = `${catName}素材 - 栗子素材网`;
+  const canonicalUrl = `${SITE_URL}/cat/${encodeURIComponent(catName)}`;
+
+  // Get sample material names for this category (for structured data)
+  let sampleMaterials = [];
+  try {
+    sampleMaterials = db.prepare('SELECT name FROM materials WHERE cat = ? ORDER BY sort_order, id DESC LIMIT 10').all(catName).map(m => m.name);
+  } catch(e) {}
+
+  // Replace title
+  html = html.replace(/<title>.*?<\/title>/, `<title>${pageTitle}</title>`);
+
+  // Replace canonical
+  html = html.replace(/<link rel="canonical" href=".*?"/, `<link rel="canonical" href="${canonicalUrl}"`);
+
+  // Replace OG tags
+  html = html.replace(/<meta property="og:title" content=".*?"/, `<meta property="og:title" content="${pageTitle}"`);
+  html = html.replace(/<meta property="og:url" content=".*?"/, `<meta property="og:url" content="${canonicalUrl}"`);
+  html = html.replace(/<meta property="og:description" content=".*?"/, `<meta property="og:description" content="${catDesc}"`);
+  html = html.replace(/<meta name="twitter:title" content=".*?"/, `<meta name="twitter:title" content="${pageTitle}"`);
+  html = html.replace(/<meta name="twitter:description" content=".*?"/, `<meta name="twitter:description" content="${catDesc}"`);
+
+  // Inject category-specific structured data with material names
+  const itemListJSON = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": `${catName}素材`,
+    "description": catDesc,
+    "url": canonicalUrl,
+    "numberOfItems": sampleMaterials.length,
+    "itemListElement": sampleMaterials.map((name, i) => ({
+      "@type": "ListItem",
+      "position": i + 1,
+      "name": name
+    }))
+  });
+
+  const itemListScript = `<script type="application/ld+json">${itemListJSON}</script>`;
+  html = html.replace('</head>', itemListScript + '\n</head>');
+
+  // Inject a hidden div with category content for crawlers
+  const crawlerContent = `<div style="display:none" aria-hidden="true">
+    <h2>${catName}素材列表</h2>
+    <p>${catDesc}</p>
+    <ul>${sampleMaterials.map(n => `<li>${n}</li>`).join('')}</ul>
+  </div>`;
+  html = html.replace('<main class="main-content">', crawlerContent + '\n  <main class="main-content">');
+
+  res.type('html');
+  res.send(html);
+});
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
@@ -794,7 +882,6 @@ app.post('/api/snapshot/restore', async (req, res) => {
 });
 
 // === SEO: sitemap & robots.txt ===
-const SITE_URL = process.env.SITE_URL || 'https://lizi-sucai.onrender.com';
 
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
@@ -814,20 +901,20 @@ app.get('/sitemap.xml', (req, res) => {
   const now = new Date().toISOString().split('T')[0];
   const urls = [
     { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', lastmod: now },
-    { loc: SITE_URL + '/?cat=表情包', changefreq: 'daily', priority: '0.8', lastmod: now },
-    { loc: SITE_URL + '/?cat=人物', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/?cat=背景图', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/?cat=道具栏', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/?cat=特效', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/?cat=画师寄售', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/?cat=限时优惠', changefreq: 'weekly', priority: '0.6', lastmod: now },
+    { loc: SITE_URL + '/cat/%E4%BA%BA%E7%89%A9', changefreq: 'daily', priority: '0.9', lastmod: now },
+    { loc: SITE_URL + '/cat/%E8%A1%A8%E6%83%85%E5%8C%85', changefreq: 'daily', priority: '0.8', lastmod: now },
+    { loc: SITE_URL + '/cat/%E7%94%BB%E5%B8%88%E5%AF%84%E5%94%AE', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/cat/%E8%83%8C%E6%99%AF%E5%9B%BE', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/cat/%E9%81%93%E5%85%B7%E6%A0%8F', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/cat/%E7%89%B9%E6%95%88', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: SITE_URL + '/cat/%E9%99%90%E6%97%B6%E4%BC%98%E6%83%A0', changefreq: 'weekly', priority: '0.6', lastmod: now },
   ];
 
   materials.forEach(m => {
     urls.push({
-      loc: `${SITE_URL}/?id=${m.id}`,
-      changefreq: 'weekly',
-      priority: '0.6',
+      loc: `${SITE_URL}/cat/${encodeURIComponent(m.cat)}?id=${m.id}`,
+      changefreq: 'monthly',
+      priority: '0.5',
       lastmod: (m.created_at || now).split(' ')[0]
     });
   });
