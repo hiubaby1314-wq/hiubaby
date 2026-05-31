@@ -13,31 +13,31 @@
   <title>栗子素材网 - 专业美术素材下载平台</title>
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-  <link rel="canonical" href="https://lizi-sucai.onrender.com/" />
+  <link rel="canonical" href="/" />
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="栗子素材网 - 专业美术素材下载平台">
   <meta property="og:description" content="提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件，支持在线预览，海量优质素材等你来下载">
-  <meta property="og:url" content="https://lizi-sucai.onrender.com/">
+  <meta property="og:url" content="https://lizisucaiwang.online/">
   <meta property="og:site_name" content="栗子素材网">
-  <meta property="og:image" content="https://lizi-sucai.onrender.com/assets/assets/banner_optimized.jpg">
+  <meta property="og:image" content="https://lizisucaiwang.online/assets/assets/banner_optimized.jpg">
   <meta property="og:locale" content="zh_CN">
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="栗子素材网 - 专业美术素材下载平台">
   <meta name="twitter:description" content="提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件，支持在线预览">
-  <meta name="twitter:image" content="https://lizi-sucai.onrender.com/assets/assets/banner_optimized.jpg">
+  <meta name="twitter:image" content="https://lizisucaiwang.online/assets/assets/banner_optimized.jpg">
   <!-- JSON-LD Structured Data -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebSite",
     "name": "栗子素材网",
-    "url": "https://lizi-sucai.onrender.com/",
+    "url": "https://lizisucaiwang.online/",
     "description": "专业美术素材下载平台，提供表情包、人物立绘、背景图、道具栏、特效等FLA源文件",
     "potentialAction": {
       "@type": "SearchAction",
-      "target": "https://lizi-sucai.onrender.com/?q={search_term_string}",
+      "target": "https://lizisucaiwang.online/?q={search_term_string}",
       "query-input": "required name=search_term_string"
     }
   }
@@ -1489,12 +1489,12 @@
       document.title = pageTitle;
       // Update canonical
       let canonical = document.querySelector('link[rel="canonical"]');
-      if (canonical) canonical.href = 'https://lizi-sucai.onrender.com/cat/' + encodeURIComponent(cat);
+      if (canonical) canonical.href = window.location.origin + '/cat/' + encodeURIComponent(cat);
       // Update OG tags
       let ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle) ogTitle.content = pageTitle;
       let ogUrl = document.querySelector('meta[property="og:url"]');
-      if (ogUrl) ogUrl.content = 'https://lizi-sucai.onrender.com/cat/' + encodeURIComponent(cat);
+      if (ogUrl) ogUrl.content = window.location.origin + '/cat/' + encodeURIComponent(cat);
       let ogDesc = document.querySelector('meta[property="og:description"]');
       if (ogDesc) ogDesc.content = desc;
     }

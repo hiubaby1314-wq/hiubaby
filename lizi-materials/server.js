@@ -281,7 +281,11 @@ async function deleteFromR2(url) {
 }
 
 // === SEO Config ===
-const SITE_URL = process.env.SITE_URL || 'https://lizi-sucai.onrender.com';
+function getSiteURL(req) {
+  if (process.env.SITE_URL) return process.env.SITE_URL;
+  if (req) return `${req.protocol}://${req.get('host')}`;
+  return 'https://lizisucaiwang.online';
+}
 
 // === Middleware ===
 app.use((req, res, next) => {
@@ -326,7 +330,8 @@ app.get('/cat/:catName', (req, res) => {
 
   const catDesc = CAT_DESCRIPTIONS[catName] || '专业美术素材下载平台';
   const pageTitle = `${catName}素材 - 栗子素材网`;
-  const canonicalUrl = `${SITE_URL}/cat/${encodeURIComponent(catName)}`;
+  const baseUrl = getSiteURL(req);
+  const canonicalUrl = `${baseUrl}/cat/${encodeURIComponent(catName)}`;
 
   // Get sample material names for this category (for structured data)
   let sampleMaterials = [];
@@ -884,15 +889,17 @@ app.post('/api/snapshot/restore', async (req, res) => {
 // === SEO: sitemap & robots.txt ===
 
 app.get('/robots.txt', (req, res) => {
+  const baseUrl = getSiteURL(req);
   res.type('text/plain');
   res.send([
     'User-agent: *',
     'Allow: /',
-    `Sitemap: ${SITE_URL}/sitemap.xml`
+    `Sitemap: ${baseUrl}/sitemap.xml`
   ].join('\n'));
 });
 
 app.get('/sitemap.xml', (req, res) => {
+  const baseUrl = getSiteURL(req);
   let materials = [];
   try {
     materials = db.prepare('SELECT id, cat, name, created_at FROM materials ORDER BY sort_order DESC, id DESC').all();
@@ -900,19 +907,19 @@ app.get('/sitemap.xml', (req, res) => {
 
   const now = new Date().toISOString().split('T')[0];
   const urls = [
-    { loc: SITE_URL + '/', changefreq: 'daily', priority: '1.0', lastmod: now },
-    { loc: SITE_URL + '/cat/%E4%BA%BA%E7%89%A9', changefreq: 'daily', priority: '0.9', lastmod: now },
-    { loc: SITE_URL + '/cat/%E8%A1%A8%E6%83%85%E5%8C%85', changefreq: 'daily', priority: '0.8', lastmod: now },
-    { loc: SITE_URL + '/cat/%E7%94%BB%E5%B8%88%E5%AF%84%E5%94%AE', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/cat/%E8%83%8C%E6%99%AF%E5%9B%BE', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/cat/%E9%81%93%E5%85%B7%E6%A0%8F', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/cat/%E7%89%B9%E6%95%88', changefreq: 'weekly', priority: '0.7', lastmod: now },
-    { loc: SITE_URL + '/cat/%E9%99%90%E6%97%B6%E4%BC%98%E6%83%A0', changefreq: 'weekly', priority: '0.6', lastmod: now },
+    { loc: baseUrl + '/', changefreq: 'daily', priority: '1.0', lastmod: now },
+    { loc: baseUrl + '/cat/%E4%BA%BA%E7%89%A9', changefreq: 'daily', priority: '0.9', lastmod: now },
+    { loc: baseUrl + '/cat/%E8%A1%A8%E6%83%85%E5%8C%85', changefreq: 'daily', priority: '0.8', lastmod: now },
+    { loc: baseUrl + '/cat/%E7%94%BB%E5%B8%88%E5%AF%84%E5%94%AE', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: baseUrl + '/cat/%E8%83%8C%E6%99%AF%E5%9B%BE', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: baseUrl + '/cat/%E9%81%93%E5%85%B7%E6%A0%8F', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: baseUrl + '/cat/%E7%89%B9%E6%95%88', changefreq: 'weekly', priority: '0.7', lastmod: now },
+    { loc: baseUrl + '/cat/%E9%99%90%E6%97%B6%E4%BC%98%E6%83%A0', changefreq: 'weekly', priority: '0.6', lastmod: now },
   ];
 
   materials.forEach(m => {
     urls.push({
-      loc: `${SITE_URL}/cat/${encodeURIComponent(m.cat)}?id=${m.id}`,
+      loc: `${baseUrl}/cat/${encodeURIComponent(m.cat)}?id=${m.id}`,
       changefreq: 'monthly',
       priority: '0.5',
       lastmod: (m.created_at || now).split(' ')[0]
