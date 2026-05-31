@@ -24,6 +24,7 @@ const USE_R2 = !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_AC
 const DB_KEY = 'lizi.db';
 const DB_PATH = path.join(__dirname, 'data', 'lizi.db');
 let db;
+let dbReady = true; // false during db close/reopen windows
 
 // === Database ===
 async function initDB() {
@@ -175,11 +176,30 @@ async function saveSnapshot() {
 }
 
 // Restore materials from snapshot (manual trigger only)
-function restoreSnapshot() {
+async function restoreSnapshot() {
   if (!fs.existsSync(SNAPSHOT_PATH)) {
     throw new Error('No snapshot found');
   }
   const snapshot = JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf-8'));
+  
+  // Collect all file paths from snapshot to identify orphans
+  const snapshotPaths = new Set();
+  for (const item of snapshot) {
+    for (const f of (item.files || [])) {
+      if (f.path) snapshotPaths.add(f.path);
+    }
+  }
+  
+  // Get all current file paths from DB
+  const currentFiles = db.prepare('SELECT path FROM material_files').all();
+  const currentPaths = currentFiles.map(f => f.path);
+  
+  // Delete R2 files that are not in the snapshot (orphans)
+  const orphans = currentPaths.filter(p => p && !snapshotPaths.has(p));
+  if (orphans.length > 0) {
+    console.log(`Cleaning up ${orphans.length} orphaned files from R2...`);
+    await Promise.all(orphans.map(p => deleteFromR2(p)));
+  }
   
   // Clear all materials
   db.exec('DELETE FROM material_files');
@@ -215,7 +235,17 @@ async function downloadFromR2(key) {
   if (!s3Client) return null;
   try {
     const res = await s3Client.client.send(new s3Client.GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
-    const buffer = Buffer.from(await res.Body.transformToByteArray());
+    let buffer;
+    if (typeof res.Body.transformToByteArray === 'function') {
+      buffer = Buffer.from(await res.Body.transformToByteArray());
+    } else {
+      // Fallback for Node.js stream
+      const chunks = [];
+      for await (const chunk of res.Body) {
+        chunks.push(chunk);
+      }
+      buffer = Buffer.concat(chunks);
+    }
     return buffer;
   } catch(e) {
     if (e.name === 'NoSuchKey') return null;
@@ -236,8 +266,12 @@ async function deleteFromR2(url) {
   if (!s3Client) return;
   let key = url;
   if (url.startsWith('http')) {
-    const prefix = R2_PUBLIC_URL ? R2_PUBLIC_URL + '/' : '';
-    key = url.replace(prefix, '');
+    const prefix = R2_PUBLIC_URL + '/';
+    if (!url.startsWith(prefix)) {
+      console.warn('deleteFromR2: URL not from our bucket, skipping:', url);
+      return;
+    }
+    key = url.slice(prefix.length);
   }
   try {
     await s3Client.client.send(new s3Client.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
@@ -247,6 +281,10 @@ async function deleteFromR2(url) {
 }
 
 // === Middleware ===
+app.use((req, res, next) => {
+  if (!dbReady) return res.status(503).json({ ok: false, error: '服务正在维护，请稍后再试' });
+  next();
+});
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -313,8 +351,12 @@ function getAllMaterials() {
 
 // Login
 app.post('/api/login', async (req, res) => {
-  const { username, password, deviceId, isMobile } = req.body;
+  const { username, password, deviceId } = req.body;
+  const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
   if (!username || !password) return res.json({ ok: false, error: '请输入用户名和密码' });
+  if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+    return res.json({ ok: false, error: '设备标识无效' });
+  }
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.password !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
 
@@ -414,7 +456,7 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
   try {
     for (const f of files) {
       const ext = path.extname(f.originalname);
-      const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+      const key = `uploads/${crypto.randomUUID()}${ext}`;
       const url = await uploadToR2(key, f.buffer, f.mimetype);
       db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
         .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
@@ -450,14 +492,14 @@ app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res
   const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
-  const materialId = req.params.id;
+  const materialId = parseInt(req.params.id, 10);
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (!material) return res.json({ ok: false, error: '素材不存在' });
 
   const files = req.files || [];
   for (const f of files) {
     const ext = path.extname(f.originalname);
-    const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    const key = `uploads/${crypto.randomUUID()}${ext}`;
     const url = await uploadToR2(key, f.buffer, f.mimetype);
     db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
       .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
@@ -472,7 +514,7 @@ app.put('/api/materials/:id', async (req, res) => {
   const { username, cat, badges, gradient } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
-  const materialId = req.params.id;
+  const materialId = parseInt(req.params.id, 10);
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (!material) return res.json({ ok: false, error: '素材不存在' });
 
@@ -497,7 +539,7 @@ app.delete('/api/materials/:id', async (req, res) => {
   const { username } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
-  const materialId = req.params.id;
+  const materialId = parseInt(req.params.id, 10);
 
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (material) {
@@ -532,11 +574,11 @@ app.post('/api/materials/reorder', async (req, res) => {
 // === Download ===
 app.post('/api/download', async (req, res) => {
   const { username, materialIndex, deviceId } = req.body;
+  const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return res.json({ ok: false, error: '请先登录' });
 
   // Check device lock (skip for mobile)
-  const { isMobile } = req.body;
   if (!isMobile) {
     const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
     if (lock) {
@@ -584,7 +626,7 @@ app.post('/api/requests', upload.array('images', 5), async (req, res) => {
   const files = req.files || [];
   for (const f of files) {
     const ext = path.extname(f.originalname);
-    const key = `uploads/${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    const key = `uploads/${crypto.randomUUID()}${ext}`;
     imgPaths.push(await uploadToR2(key, f.buffer, f.mimetype));
   }
 
@@ -690,6 +732,9 @@ app.post('/api/revert-stable', async (req, res) => {
       return res.json({ ok: false, error: 'R2 中找不到备份数据库 lizi_backup.db' });
     }
     
+    // Block other requests during DB swap
+    dbReady = false;
+    
     // Close current DB
     db.close();
     
@@ -709,9 +754,13 @@ app.post('/api/revert-stable', async (req, res) => {
     // Sync back to R2
     await syncDB();
     
+    // Unblock requests
+    dbReady = true;
+    
     res.json({ ok: true, message: '恢复成功', materialCount: count });
   } catch (e) {
     console.error('Revert failed:', e);
+    dbReady = true; // Always unblock even on error
     res.json({ ok: false, error: '恢复失败: ' + e.message });
   }
 });
@@ -736,7 +785,7 @@ app.post('/api/snapshot/restore', async (req, res) => {
   if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
   
   try {
-    const count = restoreSnapshot();
+    const count = await restoreSnapshot();
     await syncDB();
     res.json({ ok: true, message: `已从快照恢复 ${count} 个素材`, materialCount: count, materials: getAllMaterials() });
   } catch (e) {
