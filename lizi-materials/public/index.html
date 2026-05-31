@@ -1895,7 +1895,7 @@
           formData.append('cat', cat);
           formData.append('badges', badges.join(','));
           formData.append('gradient', gradient);
-          editSelectedFiles.forEach(f => formData.append('files', f));
+          editSelectedFiles.filter(f => f instanceof File).forEach(f => formData.append('files', f));
           d = await apiAddMaterialWithFiles(formData);
           if (!d.ok) throw new Error(d.error);
           if (d.warning) {
