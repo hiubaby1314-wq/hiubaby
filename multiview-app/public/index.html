@@ -490,7 +490,10 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
     <!-- AI GENERATE -->
     <div class="panel-section ai-section">
       <div class="section-label">AI 生成 AI Generate</div>
-      <p class="ai-desc">使用 AI 重新繪製不同角度的全新圖片</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <p class="ai-desc" style="margin:0">使用 AI 重新繪製不同角度的全新圖片</p>
+        <span id="usageDisplay" style="font-size:12px;color:#888;white-space:nowrap">今日剩餘: --/20</span>
+      </div>
       <div class="ai-angles">
         <button class="ai-angle-btn" data-angle="low">
           <span class="ai-angle-icon">△</span>
@@ -925,13 +928,48 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
     });
   }
 
+  // User ID system (persistent across sessions)
+  function getUserId() {
+    let userId = localStorage.getItem('multiview_userId');
+    if (!userId) {
+      userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('multiview_userId', userId);
+    }
+    return userId;
+  }
+  const userId = getUserId();
+
+  // Check and display remaining uses
+  async function updateUsageDisplay() {
+    try {
+      const res = await fetch(`/api/usage?userId=${encodeURIComponent(userId)}`);
+      const data = await res.json();
+      const usageEl = $('usageDisplay');
+      if (usageEl) {
+        usageEl.textContent = `今日剩餘: ${data.remaining}/${data.limit}`;
+        if (data.remaining === 0) {
+          usageEl.style.color = '#ef4444';
+          aiBtn.disabled = true;
+          aiBtn.title = '今日免費次數已用完';
+        } else {
+          usageEl.style.color = '';
+          if (hasImage) aiBtn.disabled = false;
+          aiBtn.title = '';
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch usage:', e);
+    }
+  }
+  updateUsageDisplay(); // Check on page load
+
   // Generate AI image
   aiBtn.addEventListener('click', async () => {
     if (!hasImage) return;
-    
+
     const angle = selectedAngle || 'low';
     const customPrompt = $('aiPrompt').value.trim();
-    
+
     // Show loading state
     aiBtn.disabled = true;
     aiBtn.querySelector('.ai-btn-text').style.display = 'none';
@@ -943,12 +981,12 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
     try {
       // Resize image to max 1024px before sending (saves ~93% tokens)
       const imageBase64 = await resizeImage(mainImg);
-      
+
       // Step 1: Start generation
       const startRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: [imageBase64], angle, size: selectedSize, prompt: customPrompt || undefined })
+        body: JSON.stringify({ images: [imageBase64], angle, size: selectedSize, prompt: customPrompt || undefined, userId })
       });
 
       if (!startRes.ok) {
@@ -957,8 +995,8 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
         throw new Error(msg);
       }
 
-      const { taskId } = await startRes.json();
-      aiStatus.textContent = 'AI 正在繪製中，請耐心等待...';
+      const { taskId, remaining } = await startRes.json();
+      aiStatus.textContent = `AI 正在繪製中，請耐心等待... (今日剩餘: ${remaining})`;
       
       // Step 2: Poll for result
       let attempts = 0;
@@ -993,7 +1031,10 @@ input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
         resultOverlay.classList.add('visible');
         $('resultLabel').textContent = `AI 生成結果 — ${getAngleName(angle)}`;
       };
-      
+
+      // Update usage display after successful generation
+      await updateUsageDisplay();
+
       aiStatus.className = 'ai-status success';
       aiStatus.textContent = '生成完成！';
       setTimeout(() => { aiStatus.style.display = 'none'; }, 3000);

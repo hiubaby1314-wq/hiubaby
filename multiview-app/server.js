@@ -12,6 +12,51 @@ const API_PATH = '/vendors/google/v1/nano-banana/edit';
 // In-memory task store (ephemeral runtime, tasks persist within a single instance)
 const tasks = new Map();
 
+// Daily free usage tracking (20 uses per day per user)
+const FREE_LIMIT = 20;
+const dailyUsage = new Map(); // key: "YYYY-MM-DD:userId", value: count
+
+// Helper: get today's date in YYYY-MM-DD format
+function getTodayKey() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// Helper: get usage key for a user on a specific date
+function getUsageKey(userId, date) {
+  return `${date}:${userId}`;
+}
+
+// Helper: get remaining uses for a user today
+function getRemainingUses(userId) {
+  const date = getTodayKey();
+  const key = getUsageKey(userId, date);
+  const used = dailyUsage.get(key) || 0;
+  return Math.max(0, FREE_LIMIT - used);
+}
+
+// Helper: increment usage count
+function incrementUsage(userId) {
+  const date = getTodayKey();
+  const key = getUsageKey(userId, date);
+  const current = dailyUsage.get(key) || 0;
+  dailyUsage.set(key, current + 1);
+  return current + 1;
+}
+
+// Daily cleanup: remove old usage records (run at midnight)
+function cleanupOldUsage() {
+  const today = getTodayKey();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  for (const key of dailyUsage.keys()) {
+    if (!key.startsWith(today) && !key.startsWith(yesterday)) {
+      dailyUsage.delete(key);
+    }
+  }
+}
+
+// Run cleanup every hour
+setInterval(cleanupOldUsage, 3600000);
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -51,7 +96,18 @@ function extractErrorMessage(err) {
 // POST /api/generate - Start image generation
 app.post('/api/generate', async (req, res) => {
   try {
-    const { images, angle, size, prompt } = req.body;
+    const { images, angle, size, prompt, userId } = req.body;
+
+    // Check daily free usage limit
+    const effectiveUserId = userId || req.ip || 'anonymous';
+    const remaining = getRemainingUses(effectiveUserId);
+    if (remaining <= 0) {
+      return res.status(429).json({
+        error: '今日免費次數已用完（每天20次），明天再來吧',
+        remaining: 0,
+        limit: FREE_LIMIT
+      });
+    }
 
     if (!images || !Array.isArray(images) || images.length === 0) {
       return res.status(400).json({ error: '請提供至少一張圖片' });
@@ -114,8 +170,12 @@ app.post('/api/generate', async (req, res) => {
       apiPath: API_PATH
     });
 
-    console.log(`[Generate] Task created: ${taskId}`);
-    res.json({ taskId });
+    // Increment usage count (only after successful task creation)
+    const usedCount = incrementUsage(effectiveUserId);
+    const newRemaining = FREE_LIMIT - usedCount;
+
+    console.log(`[Generate] Task created: ${taskId} | User: ${effectiveUserId} | Used: ${usedCount}/${FREE_LIMIT} | Remaining: ${newRemaining}`);
+    res.json({ taskId, remaining: newRemaining, limit: FREE_LIMIT });
 
   } catch (err) {
     console.error('[Generate] Error:', err);
@@ -123,6 +183,22 @@ app.post('/api/generate', async (req, res) => {
     const errorMsg = extractErrorMessage(err.message || err);
     res.status(500).json({ error: `生成請求失敗: ${errorMsg}` });
   }
+});
+
+// GET /api/usage - Check remaining daily uses for a user
+app.get('/api/usage', (req, res) => {
+  const userId = req.query.userId || req.ip || 'anonymous';
+  const remaining = getRemainingUses(userId);
+  const date = getTodayKey();
+  const key = getUsageKey(userId, date);
+  const used = dailyUsage.get(key) || 0;
+
+  res.json({
+    remaining,
+    used,
+    limit: FREE_LIMIT,
+    date
+  });
 });
 
 // GET /api/status/:taskId - Poll task status
