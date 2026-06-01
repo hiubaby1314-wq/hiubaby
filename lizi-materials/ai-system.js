@@ -133,7 +133,7 @@ router.post('/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = db.prepare(
       'INSERT INTO ai_users (phone, password, balance, free_credits) VALUES (?, ?, 0, 3)'
-    ).run(hashedPassword, phone);
+    ).run(phone, hashedPassword);
 
     const token = jwt.sign({ userId: result.lastInsertRowid }, JWT_SECRET, { expiresIn: '30d' });
 
