@@ -2271,6 +2271,11 @@
 
     // === App Popup ===
     function openAppPopup(url, title) {
+      // 检查是否是 AI 生图功能（维护中）
+      if (url.includes('ai-image.html')) {
+        showToast('🔧 AI生图功能维护中，请稍后再试');
+        return;
+      }
       let overlay = document.getElementById('appPopupOverlay');
       if (!overlay) {
         overlay = document.createElement('div');
