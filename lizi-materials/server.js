@@ -826,9 +826,8 @@ app.post('/api/download-category', async (req, res) => {
     const archive = new ZipArchive();
     
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename=lizi-materials-${category}.zip`);
     
-    archive.pipe(res);
+    res.setHeader('Content-Disposition', 'attachment; filename=lizi-materials.zip');
     
     const materials = db.prepare('SELECT * FROM materials WHERE cat = ? ORDER BY id DESC').all(category);
     
