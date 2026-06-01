@@ -863,8 +863,7 @@
     }
 
     function renderCards() {
-      // Sort materials by name (Chinese/Unicode collation)
-      materials.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant'));
+      // Keep backend order (newest first by id DESC)
       const filtered = getFilteredMaterials();
       const total = filtered.length;
       const totalPages = Math.max(1, Math.ceil(total / perPage));
