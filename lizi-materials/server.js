@@ -429,7 +429,7 @@ function getMaterialWithFiles(id) {
 }
 
 function getAllMaterials() {
-  const materials = db.prepare('SELECT * FROM materials ORDER BY sort_order, id DESC').all();
+  const materials = db.prepare('SELECT * FROM materials ORDER BY id DESC').all();
   return materials.map(m => {
     const files = db.prepare('SELECT * FROM material_files WHERE material_id = ? ORDER BY id').all(m.id);
     return {
