@@ -183,6 +183,73 @@
       .search-input { width:100%; }
       .search-box { width:100%; }
     }
+
+/* Pack panel styles */
+.pack-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  display: none;
+}
+.pack-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  z-index: 10000;
+  display: none;
+  min-width: 300px;
+}
+.pack-panel h3 {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  color: #1f2937;
+}
+.pack-category-btn {
+  display: block;
+  width: 100%;
+  padding: 12px 20px;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.pack-category-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+.pack-category-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+.pack-close-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 15px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.pack-close-btn:hover {
+  background: #e5e7eb;
+}
   </style>
 </head>
 <body>
@@ -297,6 +364,7 @@
       <button class="cat-btn" data-cat="背景图">背景图</button>
       <button class="cat-btn" data-cat="道具栏">道具栏</button>
       <button class="cat-btn" data-cat="特效">特效</button>
+      <button class="cat-btn" data-cat="素材打包" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white">素材打包</button>
     </section>
 
     <section class="sub-bar">
@@ -482,6 +550,10 @@
     <div class="preview-files" id="previewFiles"></div>
     <div class="preview-dl-area" id="previewDlArea"></div>
   </div>
+
+  <!-- Pack Panel -->
+  <div class="pack-overlay" id="packOverlay"></div>
+  <div class="pack-panel" id="packPanel"></div>
 
   <script>
     // Disable right-click and drag on all images
@@ -1433,12 +1505,166 @@
       document.getElementById('previewOverlay').classList.remove('active');
     }
 
+    function showPackPanel() {
+      const overlay = document.getElementById('packOverlay');
+      const panel = document.getElementById('packPanel');
+      
+      overlay.style.display = 'block';
+      panel.style.display = 'block';
+      overlay.onclick = closePackPanel;
+      
+      panel.innerHTML = '<h3>选择要下载的分类</h3>';
+
+      const categories = ['人物', '表情包', '背景图', '道具栏', '画师寄售', '特效'];
+      categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'pack-category-btn';
+        btn.textContent = cat + ' 素材';
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          downloadCategory(cat, btn);
+        };
+        panel.appendChild(btn);
+      });
+
+      const allBtn = document.createElement('button');
+      allBtn.className = 'pack-category-btn';
+      allBtn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+      allBtn.textContent = '全部打包下载';
+      allBtn.onclick = (e) => {
+        e.stopPropagation();
+        downloadAllMaterials(allBtn);
+      };
+      panel.appendChild(allBtn);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'pack-close-btn';
+      closeBtn.textContent = '关闭';
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        closePackPanel();
+      };
+      panel.appendChild(closeBtn);
+    }
+      document.body.appendChild(panel);
+    }
+
+    function closePackPanel() {
+      const overlay = document.getElementById('packOverlay');
+      const panel = document.getElementById('packPanel');
+      if (overlay) overlay.style.display = 'none';
+      if (panel) panel.style.display = 'none';
+    }
+    function downloadCategory(category, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = category + ' 打包中...';
+
+      fetch('/api/download-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser.username,
+          deviceId: getDeviceId(),
+          isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+          category: category
+        })
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(err => { throw new Error(err.error || '下载失败'); });
+        }
+        return response.blob();
+      })
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'lizi-materials-' + category + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      })
+      .catch(err => {
+        alert('下载失败: ' + err.message);
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      });
+    }
+
+    function downloadAllMaterials(btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '全部打包中...';
+
+      fetch('/api/download-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser.username,
+          deviceId: getDeviceId(),
+          isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+        })
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(err => { throw new Error(err.error || '下载失败'); });
+        }
+        return response.blob();
+      })
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'lizi-materials-all.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      })
+      .catch(err => {
+        alert('下载失败: ' + err.message);
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      });
+    }
+
     // ===== EVENT LISTENERS =====
     document.getElementById('categories').addEventListener('click', function(e) {
       const btn = e.target.closest('.cat-btn');
       if (!btn) return;
       document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+
+      // Handle 素材打包 button
+      if (currentCat === '素材打包') {
+        if (!currentUser) {
+          alert('请先登录后再使用素材打包功能');
+          currentCat = '人物';
+          document.querySelectorAll('.cat-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cat === '人物');
+          });
+          renderCards();
+          return;
+        }
+        const canDownload = currentUser.role === 'admin' || currentUser.role === 'vip';
+        if (!canDownload) {
+          alert('权限不足，仅管理员或VIP可使用素材打包功能');
+          currentCat = '人物';
+          document.querySelectorAll('.cat-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cat === '人物');
+          });
+          renderCards();
+          return;
+        }
+        showPackPanel();
+        return;
+      }
       currentCat = btn.dataset.cat;
       currentPage = 1;
       // Update URL for SEO-friendly routing

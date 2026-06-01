@@ -732,6 +732,133 @@ app.post('/api/download/track', async (req, res) => {
   res.json({ ok: true });
 });
 
+
+// Download all materials as zip
+app.post('/api/download-all', async (req, res) => {
+  const { username, deviceId } = req.body;
+  const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.json({ ok: false, error: '请先登录' });
+
+  // Check device lock (skip for mobile)
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.json({ ok: false, error: '设备不匹配，无法下载' });
+      }
+      if (lock.is_mobile) {
+        return res.json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+      }
+    }
+  }
+
+  const role = user.role;
+  const canDl = role === 'admin' || role === 'vip';
+  if (!canDl) return res.json({ ok: false, error: '权限不足，仅管理员或VIP可下载全部素材' });
+
+  try {
+    const { ZipArchive } = await import('archiver');
+    const archive = new ZipArchive();
+    
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename=lizi-materials-all.zip');
+    
+    archive.pipe(res);
+    
+    const materials = db.prepare('SELECT * FROM materials ORDER BY id DESC').all();
+    
+    for (const mat of materials) {
+      const files = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(mat.id);
+      
+      for (const file of files) {
+        try {
+          const r2Key = file.path.replace('https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev/', '');
+          const fileBuffer = await downloadFromR2(r2Key);
+          
+          if (fileBuffer) {
+            const folder = mat.cat || '未分类';
+            const fileName = file.name || `file_${file.id}${file.ext}`;
+            archive.append(fileBuffer, { name: `${folder}/${mat.name}/${fileName}` });
+          }
+        } catch (e) {
+          console.error(`Failed to add file ${file.name}:`, e.message);
+        }
+      }
+    }
+    
+    await archive.finalize();
+  } catch (e) {
+    console.error('Download all error:', e);
+    if (!res.headersSent) {
+      res.json({ ok: false, error: '打包失败: ' + e.message });
+    }
+  }
+});
+// === Download Category ===
+app.post('/api/download-category', async (req, res) => {
+  const { username, deviceId, category } = req.body;
+  const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.json({ ok: false, error: '请先登录' });
+
+  // Check device lock (skip for mobile)
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.json({ ok: false, error: '设备不匹配，无法下载' });
+      }
+      if (lock.is_mobile) {
+        return res.json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+      }
+    }
+  }
+
+  const role = user.role;
+  const canDl = role === 'admin' || role === 'vip';
+  if (!canDl) return res.json({ ok: false, error: '权限不足，仅管理员或VIP可下载素材' });
+
+  if (!category) return res.json({ ok: false, error: '请指定分类' });
+
+  try {
+    const { ZipArchive } = await import('archiver');
+    const archive = new ZipArchive();
+    
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename=lizi-materials-${category}.zip`);
+    
+    archive.pipe(res);
+    
+    const materials = db.prepare('SELECT * FROM materials WHERE cat = ? ORDER BY id DESC').all(category);
+    
+    for (const mat of materials) {
+      const files = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(mat.id);
+      
+      for (const file of files) {
+        try {
+          const r2Key = file.path.replace('https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev/', '');
+          const fileBuffer = await downloadFromR2(r2Key);
+          
+          if (fileBuffer) {
+            const fileName = file.name || `file_${file.id}${file.ext}`;
+            archive.append(fileBuffer, { name: `${mat.name}/${fileName}` });
+          }
+        } catch (e) {
+          console.error(`Failed to add file ${file.name}:`, e.message);
+        }
+      }
+    }
+    
+    await archive.finalize();
+  } catch (e) {
+    console.error('Download category error:', e);
+    if (!res.headersSent) {
+      res.json({ ok: false, error: '打包失败: ' + e.message });
+    }
+  }
+});
+
 // === Requests ===
 app.post('/api/requests', upload.array('images', 5), async (req, res) => {
   const { username, content, contact } = req.body;
