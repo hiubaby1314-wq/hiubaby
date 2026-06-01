@@ -531,7 +531,7 @@ header p { margin-top:0.75rem; color:var(--text-muted); font-size:0.95rem; font-
     <div style="background:var(--surface);padding:2rem;border-radius:12px;width:90%;max-width:400px;border:1px solid var(--border);">
       <h3 style="margin:0 0 1.5rem 0;color:var(--accent);">注册</h3>
       <input id="registerPhone" type="tel" placeholder="手机号" style="width:100%;padding:0.8rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);margin-bottom:1rem;">
-      <input id="registerPassword" type="password" placeholder="密码（至少6位）" style="width:100%;padding:0.8rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);margin-bottom:1rem;">
+      <input id="registerPassword" type="password" placeholder="密码（大小写+符号，至少6位）" style="width:100%;padding:0.8rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);margin-bottom:1rem;">
       <input id="registerPassword2" type="password" placeholder="确认密码" style="width:100%;padding:0.8rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);margin-bottom:1rem;">
       <button onclick="doRegister()" style="width:100%;padding:0.8rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:600;cursor:pointer;margin-bottom:1rem;">注册</button>
       <p style="text-align:center;font-size:0.85rem;color:var(--text-muted);">已有账号？<a href="#" onclick="showLoginModal()" style="color:var(--accent);">立即登录</a></p>
@@ -1535,6 +1535,9 @@ async function doRegister() {
   const password2 = document.getElementById('registerPassword2').value;
   if (!phone || !password) { showToast('请填写手机号和密码'); return; }
   if (password.length < 6) { showToast('密码至少6位'); return; }
+  if (!/[a-z]/.test(password)) { showToast('密码必须包含小写字母'); return; }
+  if (!/[A-Z]/.test(password)) { showToast('密码必须包含大写字母'); return; }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) { showToast('密码必须包含特殊符号'); return; }
   if (password !== password2) { showToast('两次密码不一致'); return; }
   try {
     const resp = await fetch(`${API_BASE}/register`, {

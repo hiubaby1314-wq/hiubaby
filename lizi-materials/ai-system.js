@@ -114,6 +114,15 @@ router.post('/register', async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({ error: '密码至少6位' });
     }
+    if (!/[a-z]/.test(password)) {
+      return res.status(400).json({ error: '密码必须包含小写字母' });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ error: '密码必须包含大写字母' });
+    }
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      return res.status(400).json({ error: '密码必须包含特殊符号' });
+    }
 
     const db = req.app.locals.db;
     const existing = db.prepare('SELECT id FROM ai_users WHERE phone = ?').get(phone);
