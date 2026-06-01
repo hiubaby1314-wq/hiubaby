@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
