@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const AlipaySdk = require('alipay-sdk').default;
+const { AlipaySdk, AlipayFormData } = require('alipay-sdk');
 
 // AI模型定价（成本价，单位：元）
 const MODEL_PRICING = {
@@ -247,16 +247,18 @@ router.post('/payment/create', authMiddleware, async (req, res) => {
       alipayPublicKey: process.env.ALIPAY_PUBLIC_KEY
     });
 
-    const result = await alipaySdk.exec('alipay.trade.page.pay', {
-      notifyUrl: 'https://lizisucaiwang.online/api/ai/payment/notify',
-      returnUrl: 'https://lizisucaiwang.online/ai-image.html?payment=success',
-      bizContent: {
-        outTradeNo: orderNo,
-        totalAmount: amount.toFixed(2),
-        subject: `栗子AI生图充值 ${amount}元`,
-        productCode: 'FAST_INSTANT_TRADE_PAY'
-      }
-    }, { method: 'get' });
+    const formData = new AlipayFormData();
+    formData.setMethod('get');
+    formData.addField('notifyUrl', 'https://lizisucaiwang.online/api/ai/payment/notify');
+    formData.addField('returnUrl', 'https://lizisucaiwang.online/ai-image.html?payment=success');
+    formData.addField('bizContent', JSON.stringify({
+      outTradeNo: orderNo,
+      totalAmount: amount.toFixed(2),
+      subject: `栗子AI生图充值 ${amount}元`,
+      productCode: 'FAST_INSTANT_TRADE_PAY'
+    }));
+
+    const result = await alipaySdk.pageExec('alipay.trade.page.pay', formData);
 
     res.json({
       success: true,
