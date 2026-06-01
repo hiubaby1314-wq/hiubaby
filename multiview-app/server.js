@@ -1,55 +1,125 @@
 const express = require('express');
 const path = require('path');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // MuleRouter API configuration
-const API_KEY = process.env.MULEROUTER_API_KEY || process.env.API_KEY || 'sk-mr-6a50a43d124fef8b7bac6d3fcf5cdeec8e32ea94249b22e78b05637b853a87a9';
+const API_KEY = process.env.MULEROUTER_API_KEY || process.env.API_KEY || '';
 const BASE_URL = process.env.MULEROUTER_BASE_URL || process.env.BASE_URL || 'https://api.mulerouter.ai';
 const API_PATH = '/vendors/google/v1/nano-banana/edit';
 
 // In-memory task store (ephemeral runtime, tasks persist within a single instance)
 const tasks = new Map();
 
+// Tencent Cloud COS configuration for persistent usage storage
+const COS_BUCKET = process.env.COS_BUCKET || '';
+const COS_REGION = process.env.COS_REGION || 'ap-hongkong';
+const COS_ENDPOINT = process.env.COS_ENDPOINT || 'https://cos.ap-hongkong.myqcloud.com';
+const COS_ACCESS_KEY_ID = process.env.COS_ACCESS_KEY_ID || '';
+const COS_SECRET_ACCESS_KEY = process.env.COS_SECRET_ACCESS_KEY || '';
+const USAGE_COS_KEY = 'multiview/usage.json';
+
+// Check if COS is configured
+const COS_ENABLED = !!(COS_BUCKET && COS_ACCESS_KEY_ID && COS_SECRET_ACCESS_KEY);
+
+// Initialize COS client only if configured
+let cosClient = null;
+if (COS_ENABLED) {
+  cosClient = new S3Client({
+    region: COS_REGION,
+    endpoint: COS_ENDPOINT,
+    credentials: {
+      accessKeyId: COS_ACCESS_KEY_ID,
+      secretAccessKey: COS_SECRET_ACCESS_KEY
+    }
+  });
+}
+
 // Daily free usage tracking (20 uses per day per user)
 const FREE_LIMIT = 20;
-const dailyUsage = new Map(); // key: "YYYY-MM-DD:userId", value: count
+let usageData = {}; // { "YYYY-MM-DD": { "userId": count } }
+let usageLoaded = false;
 
 // Helper: get today's date in YYYY-MM-DD format
 function getTodayKey() {
   return new Date().toISOString().split('T')[0];
 }
 
-// Helper: get usage key for a user on a specific date
-function getUsageKey(userId, date) {
-  return `${date}:${userId}`;
+// Load usage data from COS
+async function loadUsageFromCOS() {
+  if (usageLoaded) return;
+  if (!COS_ENABLED) {
+    console.log('[COS] Not configured, using in-memory storage');
+    usageLoaded = true;
+    return;
+  }
+  try {
+    const command = new GetObjectCommand({
+      Bucket: COS_BUCKET,
+      Key: USAGE_COS_KEY
+    });
+    const response = await cosClient.send(command);
+    const data = await response.Body.transformToString();
+    usageData = JSON.parse(data);
+    console.log('[COS] Usage data loaded:', Object.keys(usageData).length, 'days');
+  } catch (err) {
+    if (err.name === 'NoSuchKey' || err.code === 'NoSuchKey') {
+      console.log('[COS] No usage data found, starting fresh');
+      usageData = {};
+    } else {
+      console.error('[COS] Failed to load usage data:', err.message);
+      usageData = {};
+    }
+  }
+  usageLoaded = true;
+}
+
+// Save usage data to COS
+async function saveUsageToCOS() {
+  if (!COS_ENABLED) return;
+  try {
+    const command = new PutObjectCommand({
+      Bucket: COS_BUCKET,
+      Key: USAGE_COS_KEY,
+      Body: JSON.stringify(usageData),
+      ContentType: 'application/json'
+    });
+    await cosClient.send(command);
+    console.log('[COS] Usage data saved');
+  } catch (err) {
+    console.error('[COS] Failed to save usage data:', err.message);
+  }
 }
 
 // Helper: get remaining uses for a user today
 function getRemainingUses(userId) {
   const date = getTodayKey();
-  const key = getUsageKey(userId, date);
-  const used = dailyUsage.get(key) || 0;
+  const used = usageData[date]?.[userId] || 0;
   return Math.max(0, FREE_LIMIT - used);
 }
 
 // Helper: increment usage count
 function incrementUsage(userId) {
   const date = getTodayKey();
-  const key = getUsageKey(userId, date);
-  const current = dailyUsage.get(key) || 0;
-  dailyUsage.set(key, current + 1);
+  if (!usageData[date]) {
+    usageData[date] = {};
+  }
+  const current = usageData[date][userId] || 0;
+  usageData[date][userId] = current + 1;
   return current + 1;
 }
 
-// Daily cleanup: remove old usage records (run at midnight)
+// Cleanup old usage data (keep only today and yesterday)
 function cleanupOldUsage() {
   const today = getTodayKey();
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  for (const key of dailyUsage.keys()) {
-    if (!key.startsWith(today) && !key.startsWith(yesterday)) {
-      dailyUsage.delete(key);
+  const datesToKeep = new Set([today, yesterday]);
+  
+  for (const date of Object.keys(usageData)) {
+    if (!datesToKeep.has(date)) {
+      delete usageData[date];
     }
   }
 }
@@ -96,6 +166,9 @@ function extractErrorMessage(err) {
 // POST /api/generate - Start image generation
 app.post('/api/generate', async (req, res) => {
   try {
+    // Load usage data from COS on first request
+    await loadUsageFromCOS();
+    
     const { images, angle, size, prompt, userId } = req.body;
 
     // Check daily free usage limit
@@ -173,6 +246,9 @@ app.post('/api/generate', async (req, res) => {
     // Increment usage count (only after successful task creation)
     const usedCount = incrementUsage(effectiveUserId);
     const newRemaining = FREE_LIMIT - usedCount;
+    
+    // Save to COS
+    await saveUsageToCOS();
 
     console.log(`[Generate] Task created: ${taskId} | User: ${effectiveUserId} | Used: ${usedCount}/${FREE_LIMIT} | Remaining: ${newRemaining}`);
     res.json({ taskId, remaining: newRemaining, limit: FREE_LIMIT });
@@ -186,19 +262,26 @@ app.post('/api/generate', async (req, res) => {
 });
 
 // GET /api/usage - Check remaining daily uses for a user
-app.get('/api/usage', (req, res) => {
-  const userId = req.query.userId || req.ip || 'anonymous';
-  const remaining = getRemainingUses(userId);
-  const date = getTodayKey();
-  const key = getUsageKey(userId, date);
-  const used = dailyUsage.get(key) || 0;
+app.get('/api/usage', async (req, res) => {
+  try {
+    // Load usage data from COS on first request
+    await loadUsageFromCOS();
+    
+    const userId = req.query.userId || req.ip || 'anonymous';
+    const date = getTodayKey();
+    const used = usageData[date]?.[userId] || 0;
+    const remaining = Math.max(0, FREE_LIMIT - used);
 
-  res.json({
-    remaining,
-    used,
-    limit: FREE_LIMIT,
-    date
-  });
+    res.json({
+      remaining,
+      used,
+      limit: FREE_LIMIT,
+      date
+    });
+  } catch (err) {
+    console.error('[Usage] Error:', err);
+    res.status(500).json({ error: '查詢使用次數失敗' });
+  }
 });
 
 // GET /api/status/:taskId - Poll task status
@@ -336,4 +419,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Perspective Shifter server running on port ${PORT}`);
   console.log(`API: ${BASE_URL}${API_PATH}`);
   console.log(`API Key: ${API_KEY ? 'configured' : 'NOT SET'}`);
+  console.log(`COS Storage: ${COS_ENABLED ? `${COS_BUCKET} in ${COS_REGION}` : 'NOT CONFIGURED (using in-memory storage)'}`);
 });
