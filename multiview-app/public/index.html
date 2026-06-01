@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>透視角度變換器 — Perspective Shifter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+/* Hide injected footer bar */
+.mulepage-float, .mulepage-anim-dark, .mulepage-anim-light,
+[class*="mulepage-"] { display:none !important; visibility:hidden !important; opacity:0 !important; pointer-events:none !important; height:0 !important; max-height:0 !important; overflow:hidden !important; }
+:root{
+  --bg:#0a0a0f;--surface:#13131a;--surface2:#1a1a24;--border:#2a2a38;
+  --text:#e8e6f0;--text2:#8a8898;--accent:#c4a04e;--accent2:#e8c665;
+  --danger:#d4564a;--glow:rgba(196,160,78,.12);
+  --font-display:'Outfit',sans-serif;--font-body:'Noto Sans TC','Outfit',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+body{
+  font-family:var(--font-body);background:var(--bg);color:var(--text);
+  min-height:100vh;overflow-x:hidden;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 10%,rgba(196,160,78,.04),transparent),
+    radial-gradient(ellipse 60% 50% at 80% 90%,rgba(90,60,180,.04),transparent);
+}
+
+/* --- HEADER --- */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1.25rem 2.5rem;border-bottom:1px solid var(--border);
+  backdrop-filter:blur(12px);position:sticky;top:0;z-index:100;
+  background:rgba(10,10,15,.85);
+}
+.logo{display:flex;align-items:center;gap:.75rem}
+.logo-icon{
+  width:36px;height:36px;border:2px solid var(--accent);border-radius:8px;
+  display:grid;place-items:center;font-size:1rem;color:var(--accent);
+  background:linear-gradient(135deg,rgba(196,160,78,.15),transparent);
+  transform:rotate(-5deg);
+}
+.logo h1{font-family:var(--font-display);font-weight:600;font-size:1.15rem;letter-spacing:-.02em}
+.logo h1 span{color:var(--accent);font-weight:300}
+header nav{display:flex;gap:1.5rem;align-items:center}
+header nav a{color:var(--text2);text-decoration:none;font-size:.82rem;font-weight:400;letter-spacing:.04em;transition:color .2s}
+header nav a:hover{color:var(--accent2)}
+
+/* --- LAYOUT --- */
+.app{display:grid;grid-template-columns:1fr 340px;height:calc(100vh - 65px)}
+.canvas-area{
+  display:flex;align-items:center;justify-content:center;
+  padding:2rem;position:relative;overflow:hidden;
+}
+.canvas-area::before{
+  content:'';position:absolute;inset:0;
+  background:
+    repeating-linear-gradient(0deg,transparent,transparent 40px,rgba(255,255,255,.012) 40px,rgba(255,255,255,.012) 41px),
+    repeating-linear-gradient(90deg,transparent,transparent 40px,rgba(255,255,255,.012) 40px,rgba(255,255,255,.012) 41px);
+  pointer-events:none;
+}
+
+/* --- STAGE --- */
+.stage-wrapper{
+  perspective:1200px;perspective-origin:50% 50%;
+  display:flex;align-items:center;justify-content:center;
+  width:100%;max-width:600px;height:70vh;position:relative;
+}
+.stage{
+  transform-style:preserve-3d;transition:transform .6s cubic-bezier(.25,.46,.45,.94);
+  position:relative;
+}
+.stage img{
+  max-width:100%;max-height:65vh;display:block;
+  filter:drop-shadow(0 20px 60px rgba(0,0,0,.5));
+  transition:filter .4s;
+}
+
+/* --- UPLOAD OVERLAY --- */
+.upload-overlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1.2rem;
+  border:2px dashed var(--border);border-radius:16px;
+  cursor:pointer;transition:all .3s;background:rgba(19,19,26,.6);
+  backdrop-filter:blur(4px);z-index:5;
+}
+.upload-overlay:hover{border-color:var(--accent);background:rgba(196,160,78,.04)}
+.upload-overlay.dragover{border-color:var(--accent2);background:rgba(196,160,78,.08);transform:scale(1.01)}
+.upload-overlay.hidden{opacity:0;pointer-events:none}
+.upload-icon{
+  width:64px;height:64px;border-radius:16px;
+  background:linear-gradient(135deg,var(--surface2),var(--surface));
+  border:1px solid var(--border);display:grid;place-items:center;
+  font-size:1.6rem;color:var(--accent);
+}
+.upload-overlay p{font-size:.92rem;color:var(--text2);text-align:center;line-height:1.6}
+.upload-overlay p strong{color:var(--text);font-weight:500}
+.upload-hint{font-family:var(--font-mono);font-size:.72rem;color:var(--text2);opacity:.5}
+
+/* --- SIDE PANEL --- */
+.panel{
+  background:var(--surface);border-left:1px solid var(--border);
+  overflow-y:auto;display:flex;flex-direction:column;
+}
+.panel::-webkit-scrollbar{width:4px}
+.panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+.panel-section{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)}
+.panel-section:last-child{border-bottom:none}
+.section-label{
+  font-family:var(--font-display);font-size:.7rem;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--text2);
+  margin-bottom:.9rem;display:flex;align-items:center;gap:.5rem;
+}
+.section-label::before{content:'';width:8px;height:2px;background:var(--accent);border-radius:1px}
+
+/* --- PRESETS --- */
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.preset-btn{
+  padding:.65rem .5rem;border:1px solid var(--border);border-radius:10px;
+  background:var(--surface2);color:var(--text);font-family:var(--font-body);
+  font-size:.78rem;cursor:pointer;transition:all .25s;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:.3rem;
+}
+.preset-btn .preset-icon{font-size:1.2rem;line-height:1}
+.preset-btn .preset-label{font-weight:500}
+.preset-btn .preset-sub{font-size:.65rem;color:var(--text2);font-family:var(--font-mono)}
+.preset-btn:hover{border-color:var(--accent);background:rgba(196,160,78,.06)}
+.preset-btn.active{border-color:var(--accent);background:rgba(196,160,78,.1);color:var(--accent2)}
+
+/* --- SLIDERS --- */
+.slider-group{margin-bottom:1rem}
+.slider-group:last-child{margin-bottom:0}
+.slider-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.45rem}
+.slider-header label{font-size:.8rem;font-weight:400;color:var(--text)}
+.slider-header .slider-val{
+  font-family:var(--font-mono);font-size:.72rem;color:var(--accent);
+  background:rgba(196,160,78,.08);padding:.15rem .45rem;border-radius:4px;
+}
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:6px;border-radius:3px;
+  background:var(--surface2);outline:none;border:1px solid var(--border);
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--accent);cursor:pointer;border:2px solid var(--bg);
+  box-shadow:0 0 8px rgba(196,160,78,.3);transition:transform .15s;
+}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
+
+/* --- BUTTONS --- */
+.btn-row{display:flex;gap:.5rem;flex-wrap:wrap}
+.btn{
+  flex:1;min-width:0;padding:.7rem .5rem;border:1px solid var(--border);
+  border-radius:10px;background:var(--surface2);color:var(--text);
+  font-family:var(--font-body);font-size:.8rem;font-weight:500;
+  cursor:pointer;transition:all .25s;text-align:center;
+}
+.btn:hover{border-color:var(--accent);background:rgba(196,160,78,.06)}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),#b08a3a);
+  color:var(--bg);border-color:var(--accent);font-weight:600;
+}
+.btn-primary:hover{filter:brightness(1.15);background:linear-gradient(135deg,var(--accent2),var(--accent))}
+
+/* --- INFO BAR --- */
+.info-bar{
+  position:absolute;bottom:1.5rem;left:50%;transform:translateX(-50%);
+  display:flex;gap:1.5rem;padding:.6rem 1.2rem;
+  background:rgba(19,19,26,.85);border:1px solid var(--border);
+  border-radius:10px;backdrop-filter:blur(8px);
+  font-family:var(--font-mono);font-size:.7rem;color:var(--text2);
+}
+.info-bar span{display:flex;align-items:center;gap:.35rem}
+.info-bar .dot{width:5px;height:5px;border-radius:50%;background:var(--accent)}
+
+/* --- ANGLE INDICATOR --- */
+.angle-indicator{
+  position:absolute;top:1.5rem;left:1.5rem;
+  padding:.5rem .8rem;background:rgba(19,19,26,.85);
+  border:1px solid var(--border);border-radius:8px;
+  backdrop-filter:blur(8px);font-family:var(--font-mono);
+  font-size:.72rem;color:var(--accent);display:flex;align-items:center;gap:.5rem;
+}
+
+/* --- RESET BUTTON --- */
+.reset-float{
+  position:absolute;top:1.5rem;right:1.5rem;
+  padding:.45rem .7rem;background:rgba(19,19,26,.85);
+  border:1px solid var(--border);border-radius:8px;
+  backdrop-filter:blur(8px);font-family:var(--font-mono);
+  font-size:.72rem;color:var(--text2);cursor:pointer;
+  transition:all .25s;
+}
+.reset-float:hover{color:var(--accent);border-color:var(--accent)}
+
+/* --- CHECKBOX --- */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem}
+.toggle-row:last-child{margin-bottom:0}
+.toggle-row label{font-size:.8rem;color:var(--text)}
+.toggle{
+  width:38px;height:20px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:10px;cursor:pointer;position:relative;transition:all .25s;
+}
+.toggle.on{background:rgba(196,160,78,.2);border-color:var(--accent)}
+.toggle::after{
+  content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;
+  border-radius:50%;background:var(--text2);transition:all .25s;
+}
+.toggle.on::after{left:20px;background:var(--accent)}
+
+/* --- RESPONSIVE --- */
+@media(max-width:860px){
+  .app{grid-template-columns:1fr;grid-template-rows:1fr auto}
+  .panel{border-left:none;border-top:1px solid var(--border);max-height:50vh}
+  .canvas-area{min-height:50vh}
+  header{padding:1rem 1.25rem}
+  header nav{display:none}
+}
+
+/* --- ANIMATIONS --- */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.panel-section{animation:fadeUp .5s ease both}
+.panel-section:nth-child(2){animation-delay:.05s}
+.panel-section:nth-child(3){animation-delay:.1s}
+.panel-section:nth-child(4){animation-delay:.15s}
+.panel-section:nth-child(5){animation-delay:.2s}
+.panel-section:nth-child(6){animation-delay:.25s}
+
+@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+.recording .angle-indicator .dot{animation:pulse 1.2s infinite}
+
+/* --- AI GENERATE SECTION --- */
+.ai-section{background:linear-gradient(180deg,var(--surface),rgba(196,160,78,.03))}
+.ai-desc{font-size:.78rem;color:var(--text2);margin-bottom:.9rem;line-height:1.5}
+.ai-angles{display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem;margin-bottom:.9rem}
+.ai-angle-btn{
+  display:flex;flex-direction:column;align-items:center;gap:.2rem;
+  padding:.55rem .25rem;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface2);color:var(--text);font-size:.72rem;
+  cursor:pointer;transition:all .25s;font-family:var(--font-body);
+}
+.ai-angle-btn .ai-angle-icon{font-size:1rem;line-height:1}
+.ai-angle-btn:hover{border-color:var(--accent);background:rgba(196,160,78,.06)}
+.ai-angle-btn.active{border-color:var(--accent);background:rgba(196,160,78,.12);color:var(--accent2)}
+.ai-prompt-box{margin-bottom:.75rem}
+.ai-prompt-box label{display:block;font-size:.75rem;color:var(--text2);margin-bottom:.35rem}
+.ai-prompt-box textarea{
+  width:100%;min-height:56px;padding:.55rem;border:1px solid var(--border);
+  border-radius:8px;background:var(--surface2);color:var(--text);
+  font-family:var(--font-body);font-size:.78rem;resize:vertical;
+  transition:border-color .2s;line-height:1.5;
+}
+.ai-prompt-box textarea:focus{outline:none;border-color:var(--accent)}
+.ai-prompt-box textarea::placeholder{color:var(--text2);opacity:.5}
+
+/* --- SIZE SELECTOR --- */
+.ai-size-box{margin-bottom:.75rem}
+.ai-size-box label{display:block;font-size:.75rem;color:var(--text2);margin-bottom:.4rem}
+.ai-size-options{display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem}
+.ai-size-btn{
+  display:flex;flex-direction:column;align-items:center;gap:.15rem;
+  padding:.5rem .25rem;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface2);color:var(--text);cursor:pointer;
+  transition:all .25s;font-family:var(--font-body);
+}
+.ai-size-btn .size-icon{font-size:.9rem;line-height:1;color:var(--text2)}
+.ai-size-btn .size-label{font-size:.72rem;font-weight:500}
+.ai-size-btn .size-px{font-size:.6rem;color:var(--text2);font-family:var(--font-mono);opacity:.7}
+.ai-size-btn:hover{border-color:var(--accent);background:rgba(196,160,78,.06)}
+.ai-size-btn.active{border-color:var(--accent);background:rgba(196,160,78,.12);color:var(--accent2)}
+.ai-size-btn.active .size-icon{color:var(--accent)}
+
+.ai-generate-btn{width:100%;padding:.75rem;font-size:.88rem;position:relative}
+.ai-generate-btn:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.5)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{
+  display:inline-block;width:14px;height:14px;border:2px solid rgba(10,10,15,.3);
+  border-top-color:var(--bg);border-radius:50%;animation:spin .6s linear infinite;
+  vertical-align:middle;margin-right:.3rem;
+}
+.ai-status{
+  margin-top:.65rem;padding:.55rem .7rem;border-radius:8px;
+  font-size:.75rem;line-height:1.5;
+}
+.ai-status.error{background:rgba(212,86,74,.1);border:1px solid rgba(212,86,74,.3);color:#e88}
+.ai-status.success{background:rgba(78,196,120,.1);border:1px solid rgba(78,196,120,.3);color:#8e8}
+.ai-status.info{background:rgba(78,140,196,.1);border:1px solid rgba(78,140,196,.3);color:#8be}
+
+/* --- RESULT COMPARISON --- */
+.result-overlay{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(10,10,15,.9);z-index:20;backdrop-filter:blur(8px);
+  opacity:0;pointer-events:none;transition:opacity .4s;
+}
+.result-overlay.visible{opacity:1;pointer-events:auto}
+.result-overlay img{max-width:90%;max-height:80vh;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.result-close{
+  position:absolute;top:1rem;right:1rem;width:36px;height:36px;border-radius:50%;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+  color:#fff;font-size:1.2rem;cursor:pointer;display:grid;place-items:center;
+  transition:all .2s;
+}
+.result-close:hover{background:rgba(255,255,255,.2)}
+.result-label{
+  position:absolute;bottom:1.5rem;left:50%;transform:translateX(-50%);
+  padding:.5rem 1rem;background:rgba(196,160,78,.15);border:1px solid var(--accent);
+  border-radius:8px;color:var(--accent2);font-size:.82rem;
+  backdrop-filter:blur(8px);
+}
+.result-actions{
+  position:absolute;bottom:4.5rem;left:50%;transform:translateX(-50%);
+  display:flex;gap:.5rem;
+}
+.result-actions .btn{padding:.55rem 1rem;font-size:.8rem;white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">◇</div>
+    <h1>Perspective <span>Shifter</span></h1>
+  </div>
+  <nav>
+    <a href="#">透視角度變換器</a>
+    <a href="#" id="loadSample">載入範例</a>
+  </nav>
+</header>
+
+<div class="app">
+  <div class="canvas-area">
+    <div class="angle-indicator"><span class="dot"></span><span id="angleText">0°, 0°, 0°</span></div>
+    <button class="reset-float" id="resetBtn">⟲ 重置</button>
+
+    <div class="stage-wrapper" id="stageWrapper">
+      <div class="stage" id="stage">
+        <img id="mainImg" src="" alt="" style="display:none">
+      </div>
+
+      <div class="upload-overlay" id="uploadOverlay">
+        <div class="upload-icon">⬆</div>
+        <p><strong>拖放圖片</strong>或點擊上傳<br>支援 JPG / PNG / WebP / SVG</p>
+        <span class="upload-hint">drop or click to upload</span>
+        <input type="file" id="fileInput" accept="image/*" style="display:none">
+      </div>
+    </div>
+
+    <div class="info-bar">
+      <span><span class="dot"></span>Perspective: <b id="infoPerspective">1200</b>px</span>
+      <span>Origin: <b id="infoOrigin">50% 50%</b></span>
+      <span id="infoDimensions"></span>
+    </div>
+
+    <!-- AI Result Overlay -->
+    <div class="result-overlay" id="resultOverlay">
+      <button class="result-close" id="resultClose">✕</button>
+      <img id="resultImg" src="" alt="AI Generated Result">
+      <div class="result-actions">
+        <button class="btn btn-primary" id="resultDownload">⤓ 下載結果</button>
+        <button class="btn" id="resultUse">套用為原圖</button>
+      </div>
+      <div class="result-label" id="resultLabel">AI 生成結果</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <!-- PRESETS -->
+    <div class="panel-section">
+      <div class="section-label">預設視角 Presets</div>
+      <div class="presets">
+        <button class="preset-btn" data-preset="front">
+          <span class="preset-icon">◻</span>
+          <span class="preset-label">正面</span>
+          <span class="preset-sub">Front</span>
+        </button>
+        <button class="preset-btn" data-preset="low">
+          <span class="preset-icon">△</span>
+          <span class="preset-label">仰視</span>
+          <span class="preset-sub">Low Angle</span>
+        </button>
+        <button class="preset-btn" data-preset="high">
+          <span class="preset-icon">▽</span>
+          <span class="preset-label">俯視</span>
+          <span class="preset-sub">High Angle</span>
+        </button>
+        <button class="preset-btn" data-preset="left">
+          <span class="preset-icon">◁</span>
+          <span class="preset-label">左側</span>
+          <span class="preset-sub">Left Side</span>
+        </button>
+        <button class="preset-btn" data-preset="right">
+          <span class="preset-icon">▷</span>
+          <span class="preset-label">右側</span>
+          <span class="preset-sub">Right Side</span>
+        </button>
+        <button class="preset-btn" data-preset="dutch">
+          <span class="preset-icon">◇</span>
+          <span class="preset-label">荷蘭角</span>
+          <span class="preset-sub">Dutch Angle</span>
+        </button>
+        <button class="preset-btn" data-preset="dramatic">
+          <span class="preset-icon">⬡</span>
+          <span class="preset-label">戲劇性</span>
+          <span class="preset-sub">Dramatic</span>
+        </button>
+        <button class="preset-btn" data-preset="hero">
+          <span class="preset-icon">⬢</span>
+          <span class="preset-label">英雄視角</span>
+          <span class="preset-sub">Hero Shot</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ROTATION CONTROLS -->
+    <div class="panel-section">
+      <div class="section-label">旋轉控制 Rotation</div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>X 軸旋轉（上下傾斜）</label>
+          <span class="slider-val" id="valRotX">0°</span>
+        </div>
+        <input type="range" id="rotX" min="-60" max="60" value="0" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>Y 軸旋轉（左右轉動）</label>
+          <span class="slider-val" id="valRotY">0°</span>
+        </div>
+        <input type="range" id="rotY" min="-60" max="60" value="0" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>Z 軸旋轉（翻滾）</label>
+          <span class="slider-val" id="valRotZ">0°</span>
+        </div>
+        <input type="range" id="rotZ" min="-45" max="45" value="0" step="1">
+      </div>
+    </div>
+
+    <!-- PERSPECTIVE CONTROLS -->
+    <div class="panel-section">
+      <div class="section-label">透視參數 Perspective</div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>透視距離</label>
+          <span class="slider-val" id="valPersp">1200px</span>
+        </div>
+        <input type="range" id="perspDist" min="200" max="3000" value="1200" step="50">
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>透視原點 X</label>
+          <span class="slider-val" id="valOrigX">50%</span>
+        </div>
+        <input type="range" id="origX" min="0" max="100" value="50" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>透視原點 Y</label>
+          <span class="slider-val" id="valOrigY">50%</span>
+        </div>
+        <input type="range" id="origY" min="0" max="100" value="50" step="1">
+      </div>
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>縮放</label>
+          <span class="slider-val" id="valScale">1.0x</span>
+        </div>
+        <input type="range" id="scaleVal" min="0.3" max="2.5" value="1" step="0.05">
+      </div>
+    </div>
+
+    <!-- OPTIONS -->
+    <div class="panel-section">
+      <div class="section-label">顯示選項 Options</div>
+      <div class="toggle-row">
+        <label>陰影效果</label>
+        <div class="toggle on" id="toggleShadow"></div>
+      </div>
+      <div class="toggle-row">
+        <label>平滑過渡</label>
+        <div class="toggle on" id="toggleSmooth"></div>
+      </div>
+      <div class="toggle-row">
+        <label>自動旋轉</label>
+        <div class="toggle" id="toggleAutoRotate"></div>
+      </div>
+    </div>
+
+    <!-- AI GENERATE -->
+    <div class="panel-section ai-section">
+      <div class="section-label">AI 生成 AI Generate</div>
+      <p class="ai-desc">使用 AI 重新繪製不同角度的全新圖片</p>
+      <div class="ai-angles">
+        <button class="ai-angle-btn" data-angle="low">
+          <span class="ai-angle-icon">△</span>
+          <span>仰視</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="high">
+          <span class="ai-angle-icon">▽</span>
+          <span>俯視</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="left">
+          <span class="ai-angle-icon">◁</span>
+          <span>左側</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="right">
+          <span class="ai-angle-icon">▷</span>
+          <span>右側</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="dutch">
+          <span class="ai-angle-icon">◇</span>
+          <span>荷蘭角</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="hero">
+          <span class="ai-angle-icon">⬢</span>
+          <span>英雄視角</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="close-up">
+          <span class="ai-angle-icon">◎</span>
+          <span>特寫</span>
+        </button>
+        <button class="ai-angle-btn" data-angle="full-body">
+          <span class="ai-angle-icon">▣</span>
+          <span>全身</span>
+        </button>
+      </div>
+      <div class="ai-size-box">
+        <label>圖片大小</label>
+        <div class="ai-size-options">
+          <button class="ai-size-btn active" data-size="1024x1024" title="1:1 正方形">
+            <span class="size-icon">◻</span>
+            <span class="size-label">1:1</span>
+            <span class="size-px">1024²</span>
+          </button>
+          <button class="ai-size-btn" data-size="1024x1536" title="2:3 直式">
+            <span class="size-icon">▯</span>
+            <span class="size-label">2:3</span>
+            <span class="size-px">1024×1536</span>
+          </button>
+          <button class="ai-size-btn" data-size="1536x1024" title="3:2 橫式">
+            <span class="size-icon">▭</span>
+            <span class="size-label">3:2</span>
+            <span class="size-px">1536×1024</span>
+          </button>
+          <button class="ai-size-btn" data-size="2048x2048" title="1:1 高解析">
+            <span class="size-icon">◻</span>
+            <span class="size-label">1:1 HD</span>
+            <span class="size-px">2048²</span>
+          </button>
+          <button class="ai-size-btn" data-size="2048x1152" title="16:9 寬螢幕">
+            <span class="size-icon">▬</span>
+            <span class="size-label">16:9</span>
+            <span class="size-px">2048×1152</span>
+          </button>
+          <button class="ai-size-btn" data-size="1152x2048" title="9:16 手機直式">
+            <span class="size-icon">▮</span>
+            <span class="size-label">9:16</span>
+            <span class="size-px">1152×2048</span>
+          </button>
+        </div>
+      </div>
+      <div class="ai-prompt-box">
+        <label>自訂提示詞 (選填)</label>
+        <textarea id="aiPrompt" placeholder="留空則使用預設提示詞..."></textarea>
+      </div>
+      <button class="btn btn-primary ai-generate-btn" id="aiGenerateBtn" disabled>
+        <span class="ai-btn-text">✨ 生成新圖片</span>
+        <span class="ai-btn-loading" style="display:none">
+          <span class="spinner"></span> 生成中...
+        </span>
+      </button>
+      <div class="ai-status" id="aiStatus" style="display:none"></div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="panel-section">
+      <div class="section-label">匯出 Export</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="downloadBtn">⤓ 下載圖片</button>
+        <button class="btn" id="uploadNewBtn">⟳ 換一張</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), wrapper = $('stageWrapper'), mainImg = $('mainImg');
+  const overlay = $('uploadOverlay'), fileInput = $('fileInput');
+  const angleText = $('angleText');
+
+  let state = {
+    rotX:0, rotY:0, rotZ:0,
+    persp:1200, origX:50, origY:50, scale:1,
+    shadow:true, smooth:true, autoRotate:false
+  };
+  let autoRotateRAF = null;
+  let hasImage = false;
+
+  // --- PRESETS ---
+  const presets = {
+    front:    { rotX:0,   rotY:0,   rotZ:0,  persp:1200, origX:50, origY:50, scale:1 },
+    low:      { rotX:-25, rotY:0,   rotZ:0,  persp:800,  origX:50, origY:85, scale:1.05 },
+    high:     { rotX:25,  rotY:0,   rotZ:0,  persp:800,  origX:50, origY:15, scale:0.95 },
+    left:     { rotX:0,   rotY:-30, rotZ:0,  persp:1000, origX:30, origY:50, scale:1 },
+    right:    { rotX:0,   rotY:30,  rotZ:0,  persp:1000, origX:70, origY:50, scale:1 },
+    dutch:    { rotX:0,   rotY:0,   rotZ:15, persp:1200, origX:50, origY:50, scale:1 },
+    dramatic: { rotX:-18, rotY:20,  rotZ:-5, persp:700,  origX:60, origY:70, scale:1.1 },
+    hero:     { rotX:-35, rotY:-10, rotZ:3,  persp:600,  origX:45, origY:90, scale:1.15 }
+  };
+
+  // --- APPLY TRANSFORM ---
+  function apply(){
+    const t = `rotateX(${state.rotX}deg) rotateY(${state.rotY}deg) rotateZ(${state.rotZ}deg) scale(${state.scale})`;
+    stage.style.transform = t;
+    stage.style.transition = state.smooth ? 'transform .6s cubic-bezier(.25,.46,.45,.94)' : 'none';
+    wrapper.style.perspective = state.persp + 'px';
+    wrapper.style.perspectiveOrigin = `${state.origX}% ${state.origY}%`;
+
+    mainImg.style.filter = state.shadow
+      ? `drop-shadow(0 ${10+Math.abs(state.rotX)}px ${40+Math.abs(state.rotX)*2}px rgba(0,0,0,.5))`
+      : 'none';
+
+    // Update display values
+    $('valRotX').textContent = state.rotX + '°';
+    $('valRotY').textContent = state.rotY + '°';
+    $('valRotZ').textContent = state.rotZ + '°';
+    $('valPersp').textContent = state.persp + 'px';
+    $('valOrigX').textContent = state.origX + '%';
+    $('valOrigY').textContent = state.origY + '%';
+    $('valScale').textContent = state.scale.toFixed(2) + 'x';
+    $('infoPerspective').textContent = state.persp;
+    $('infoOrigin').textContent = `${state.origX}% ${state.origY}%`;
+    angleText.textContent = `${state.rotX}°, ${state.rotY}°, ${state.rotZ}°`;
+
+    // Sync sliders
+    $('rotX').value = state.rotX;
+    $('rotY').value = state.rotY;
+    $('rotZ').value = state.rotZ;
+    $('perspDist').value = state.persp;
+    $('origX').value = state.origX;
+    $('origY').value = state.origY;
+    $('scaleVal').value = state.scale;
+  }
+
+  // --- SLIDER EVENTS ---
+  const sliderMap = [
+    ['rotX','rotX',v=>parseInt(v)],
+    ['rotY','rotY',v=>parseInt(v)],
+    ['rotZ','rotZ',v=>parseInt(v)],
+    ['perspDist','persp',v=>parseInt(v)],
+    ['origX','origX',v=>parseInt(v)],
+    ['origY','origY',v=>parseInt(v)],
+    ['scaleVal','scale',v=>parseFloat(v)]
+  ];
+  sliderMap.forEach(([sliderId, key, parse]) => {
+    $(sliderId).addEventListener('input', e => {
+      state[key] = parse(e.target.value);
+      clearPresetActive();
+      apply();
+    });
+  });
+
+  // --- PRESETS ---
+  function clearPresetActive(){
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+  }
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = presets[btn.dataset.preset];
+      if(!p) return;
+      Object.assign(state, p);
+      clearPresetActive();
+      btn.classList.add('active');
+      apply();
+    });
+  });
+
+  // --- TOGGLES ---
+  function setupToggle(id, key){
+    const el = $(id);
+    el.addEventListener('click', () => {
+      state[key] = !state[key];
+      el.classList.toggle('on', state[key]);
+      if(key==='autoRotate') toggleAutoRotate();
+      apply();
+    });
+  }
+  setupToggle('toggleShadow','shadow');
+  setupToggle('toggleSmooth','smooth');
+  setupToggle('toggleAutoRotate','autoRotate');
+
+  // --- AUTO ROTATE ---
+  function toggleAutoRotate(){
+    if(state.autoRotate){
+      let angle = 0;
+      const spin = () => {
+        angle += 0.3;
+        state.rotY = Math.sin(angle * Math.PI/180) * 30;
+        state.rotX = Math.sin(angle * 0.7 * Math.PI/180) * 15;
+        apply();
+        autoRotateRAF = requestAnimationFrame(spin);
+      };
+      spin();
+    } else {
+      cancelAnimationFrame(autoRotateRAF);
+    }
+  }
+
+  // --- FILE UPLOAD ---
+  overlay.addEventListener('click', () => fileInput.click());
+  $('uploadNewBtn').addEventListener('click', () => fileInput.click());
+  overlay.addEventListener('dragover', e => { e.preventDefault(); overlay.classList.add('dragover'); });
+  overlay.addEventListener('dragleave', () => overlay.classList.remove('dragover'));
+  overlay.addEventListener('drop', e => {
+    e.preventDefault(); overlay.classList.remove('dragover');
+    if(e.dataTransfer.files.length) loadImage(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => { if(e.target.files.length) loadImage(e.target.files[0]); });
+
+  function loadImage(file){
+    const reader = new FileReader();
+    reader.onload = e => {
+      mainImg.src = e.target.result;
+      mainImg.style.display = 'block';
+      overlay.classList.add('hidden');
+      hasImage = true;
+      mainImg.onload = () => {
+        $('infoDimensions').textContent = `${mainImg.naturalWidth}×${mainImg.naturalHeight}`;
+      };
+      if(aiBtn) aiBtn.disabled = false;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // --- LOAD SAMPLE ---
+  $('loadSample').addEventListener('click', e => {
+    e.preventDefault();
+    mainImg.src = 'sample.png';
+    mainImg.style.display = 'block';
+    overlay.classList.add('hidden');
+    hasImage = true;
+    mainImg.onload = () => {
+      $('infoDimensions').textContent = `${mainImg.naturalWidth}×${mainImg.naturalHeight}`;
+    };
+    if(aiBtn) aiBtn.disabled = false;
+  });
+
+  // --- RESET ---
+  $('resetBtn').addEventListener('click', () => {
+    Object.assign(state, presets.front);
+    clearPresetActive();
+    document.querySelector('[data-preset="front"]').classList.add('active');
+    apply();
+  });
+
+  // --- DOWNLOAD ---
+  $('downloadBtn').addEventListener('click', async () => {
+    if(!hasImage) return;
+    const btn = $('downloadBtn');
+    btn.textContent = '處理中...';
+    btn.disabled = true;
+    try {
+      // Temporarily remove transition for clean capture
+      const origTransition = stage.style.transition;
+      stage.style.transition = 'none';
+      // Hide upload overlay if visible
+      const origOverlay = overlay.style.display;
+      overlay.style.display = 'none';
+
+      const canvas = await html2canvas(wrapper, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        allowTaint: true,
+      });
+
+      stage.style.transition = origTransition;
+      overlay.style.display = origOverlay;
+
+      const link = document.createElement('a');
+      link.download = 'perspective-shift.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch(err) {
+      console.error('Download failed:', err);
+      // Fallback: canvas 2D approximation
+      fallbackDownload();
+    } finally {
+      btn.textContent = '⤓ 下載圖片';
+      btn.disabled = false;
+    }
+  });
+
+  function fallbackDownload(){
+    const canvas = document.createElement('canvas');
+    const w = mainImg.naturalWidth, h = mainImg.naturalHeight;
+    canvas.width = w * 1.5; canvas.height = h * 1.5;
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2);
+    const rx=state.rotX*Math.PI/180, ry=state.rotY*Math.PI/180, rz=state.rotZ*Math.PI/180, s=state.scale;
+    const cy=Math.cos(ry),sy=Math.sin(ry),cx=Math.cos(rx),sx=Math.sin(rx),cz=Math.cos(rz),sz=Math.sin(rz);
+    ctx.setTransform(cy*cz*s, cy*sz*s, (sx*sy*cz-cx*sz)*s, (sx*sy*sz+cx*cz)*s, canvas.width/2, canvas.height/2);
+    ctx.drawImage(mainImg, -w/2, -h/2, w, h);
+    ctx.restore();
+    const link = document.createElement('a');
+    link.download = 'perspective-shift.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  // --- MOUSE DRAG ON CANVAS ---
+  let dragging = false, lastMX, lastMY;
+  wrapper.addEventListener('mousedown', e => {
+    if(!hasImage) return;
+    dragging = true; lastMX = e.clientX; lastMY = e.clientY;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if(!dragging) return;
+    const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+    state.rotY = Math.max(-60, Math.min(60, state.rotY + dx * 0.4));
+    state.rotX = Math.max(-60, Math.min(60, state.rotX - dy * 0.4));
+    lastMX = e.clientX; lastMY = e.clientY;
+    clearPresetActive();
+    apply();
+  });
+  window.addEventListener('mouseup', () => dragging = false);
+
+  // Touch support
+  wrapper.addEventListener('touchstart', e => {
+    if(!hasImage || e.touches.length !== 1) return;
+    dragging = true; lastMX = e.touches[0].clientX; lastMY = e.touches[0].clientY;
+  }, {passive:true});
+  window.addEventListener('touchmove', e => {
+    if(!dragging || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - lastMX, dy = e.touches[0].clientY - lastMY;
+    state.rotY = Math.max(-60, Math.min(60, state.rotY + dx * 0.4));
+    state.rotX = Math.max(-60, Math.min(60, state.rotX - dy * 0.4));
+    lastMX = e.touches[0].clientX; lastMY = e.touches[0].clientY;
+    clearPresetActive();
+    apply();
+  }, {passive:true});
+  window.addEventListener('touchend', () => dragging = false);
+
+  // --- SCROLL ZOOM ---
+  wrapper.addEventListener('wheel', e => {
+    if(!hasImage) return;
+    e.preventDefault();
+    state.scale = Math.max(0.3, Math.min(2.5, state.scale - e.deltaY * 0.001));
+    clearPresetActive();
+    apply();
+  }, {passive:false});
+
+  // --- AI GENERATION ---
+  let selectedAngle = null;
+  let generatedImageUrl = null;
+  const aiBtn = $('aiGenerateBtn');
+  const aiStatus = $('aiStatus');
+  const resultOverlay = $('resultOverlay');
+  const resultImg = $('resultImg');
+
+  // Enable button when image is loaded
+  function updateAIButtonState() {
+    aiBtn.disabled = !hasImage;
+  }
+
+  // Override loadImage to update AI button state
+  const origLoadImage = loadImage;
+  window._loadImage = loadImage;
+
+  // Angle selection
+  document.querySelectorAll('.ai-angle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.ai-angle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedAngle = btn.dataset.angle;
+    });
+  });
+
+  // Size selection
+  let selectedSize = '1024x1024';
+  document.querySelectorAll('.ai-size-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.ai-size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedSize = btn.dataset.size;
+    });
+  });
+
+  // Resize image to max 1024px to save tokens (93% reduction)
+  function resizeImage(imgEl, maxDim = 1024) {
+    return new Promise((resolve) => {
+      const w = imgEl.naturalWidth;
+      const h = imgEl.naturalHeight;
+      
+      if (w <= maxDim && h <= maxDim) {
+        // Already small, use as-is
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+        return;
+      }
+      
+      // Calculate new dimensions
+      const ratio = Math.min(maxDim / w, maxDim / h);
+      const newW = Math.round(w * ratio);
+      const newH = Math.round(h * ratio);
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = newW;
+      canvas.height = newH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(imgEl, 0, 0, newW, newH);
+      resolve(canvas.toDataURL('image/png'));
+    });
+  }
+
+  // Generate AI image
+  aiBtn.addEventListener('click', async () => {
+    if (!hasImage) return;
+    
+    const angle = selectedAngle || 'low';
+    const customPrompt = $('aiPrompt').value.trim();
+    
+    // Show loading state
+    aiBtn.disabled = true;
+    aiBtn.querySelector('.ai-btn-text').style.display = 'none';
+    aiBtn.querySelector('.ai-btn-loading').style.display = 'inline';
+    aiStatus.style.display = 'block';
+    aiStatus.className = 'ai-status info';
+    aiStatus.textContent = '正在提交生成請求...';
+
+    try {
+      // Resize image to max 1024px before sending (saves ~93% tokens)
+      const imageBase64 = await resizeImage(mainImg);
+      
+      // Step 1: Start generation
+      const startRes = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: [imageBase64], angle, size: selectedSize, prompt: customPrompt || undefined })
+      });
+
+      if (!startRes.ok) {
+        const err = await startRes.json();
+        const msg = typeof err.error === 'object' ? (err.error.detail || err.error.message || JSON.stringify(err.error)) : (err.error || '提交失敗');
+        throw new Error(msg);
+      }
+
+      const { taskId } = await startRes.json();
+      aiStatus.textContent = 'AI 正在繪製中，請耐心等待...';
+      
+      // Step 2: Poll for result
+      let attempts = 0;
+      const maxAttempts = 72; // 6 minutes
+      let result = null;
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 5000));
+        attempts++;
+        aiStatus.textContent = `AI 正在繪製中... (${attempts * 5}秒)`;
+
+        const statusRes = await fetch(`/api/status/${taskId}`);
+        if (!statusRes.ok) continue;
+        
+        const status = await statusRes.json();
+        console.log('Poll status:', status);
+
+        if (status.status === 'completed' && status.imageUrl) {
+          result = status;
+          break;
+        } else if (status.status === 'failed') {
+          const msg = typeof status.error === 'object' ? (status.error.detail || status.error.message || JSON.stringify(status.error)) : (status.error || '生成失敗');
+          throw new Error(msg);
+        }
+      }
+
+      if (!result) throw new Error('生成超時，請重試');
+
+      generatedImageUrl = result.imageUrl;
+      resultImg.src = result.imageUrl;
+      resultImg.onload = () => {
+        resultOverlay.classList.add('visible');
+        $('resultLabel').textContent = `AI 生成結果 — ${getAngleName(angle)}`;
+      };
+      
+      aiStatus.className = 'ai-status success';
+      aiStatus.textContent = '生成完成！';
+      setTimeout(() => { aiStatus.style.display = 'none'; }, 3000);
+
+    } catch (error) {
+      console.error('AI generation error:', error);
+      aiStatus.className = 'ai-status error';
+      aiStatus.textContent = '錯誤: ' + error.message;
+    } finally {
+      aiBtn.disabled = !hasImage;
+      aiBtn.querySelector('.ai-btn-text').style.display = 'inline';
+      aiBtn.querySelector('.ai-btn-loading').style.display = 'none';
+    }
+  });
+
+  function getAngleName(angle) {
+    const names = {
+      'low': '仰視', 'high': '俯視', 'left': '左側', 'right': '右側',
+      'dutch': '荷蘭角', 'hero': '英雄視角', 'close-up': '特寫', 'full-body': '全身'
+    };
+    return names[angle] || angle;
+  }
+
+  // Close result overlay
+  $('resultClose').addEventListener('click', () => {
+    resultOverlay.classList.remove('visible');
+  });
+
+  // Download result via server proxy (handles cross-origin)
+  $('resultDownload').addEventListener('click', () => {
+    if (!generatedImageUrl) return;
+    const filename = `ai-generated-${selectedAngle || 'view'}.png`;
+    const proxyUrl = `/api/download?url=${encodeURIComponent(generatedImageUrl)}&name=${encodeURIComponent(filename)}`;
+    const link = document.createElement('a');
+    link.href = proxyUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+
+  // Use result as new source image
+  $('resultUse').addEventListener('click', () => {
+    if (!generatedImageUrl) return;
+    mainImg.src = generatedImageUrl;
+    mainImg.onload = () => {
+      $('infoDimensions').textContent = `${mainImg.naturalWidth}×${mainImg.naturalHeight}`;
+      // Reset transform
+      Object.assign(state, presets.front);
+      clearPresetActive();
+      apply();
+    };
+    resultOverlay.classList.remove('visible');
+  });
+
+  // Initial apply
+  apply();
+
+  // Remove injected watermark elements
+  function removeWatermark() {
+    document.querySelectorAll('[class*="mulepage-"]').forEach(el => el.remove());
+    document.querySelectorAll('script').forEach(s => {
+      if (s.textContent.includes('mulepage') || s.textContent.includes('__mr')) s.remove();
+    });
+  }
+  removeWatermark();
+  new MutationObserver(removeWatermark).observe(document.documentElement, { childList: true, subtree: true });
+})();
+</script>
+</body>
+</html>
