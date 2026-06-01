@@ -400,6 +400,7 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>抖音短剧违规词检测与替换</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&amp;family=Noto+Sans+SC:wght@300;400;500;700&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <meta property="og:title" content="抖音短剧违规词检测与替换"><meta property="og:type" content="website"></head>
 <body style="height: auto !important; max-height: none !important; overflow: visible !important;">
 <div class="app" style="">
@@ -497,6 +498,7 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
             
             <div class="subtitle-source-tabs">
               <div class="subtitle-source-tab active" data-source="speech" onclick="switchSubtitleSource('speech')">语音识别</div>
+              <div class="subtitle-source-tab" data-source="ocr" onclick="switchSubtitleSource('ocr')">画面字幕</div>
               <div class="subtitle-source-tab" data-source="srt" onclick="switchSubtitleSource('srt')">SRT文件</div>
               <div class="subtitle-source-tab" data-source="manual" onclick="switchSubtitleSource('manual')">手动输入</div>
             </div>
@@ -524,6 +526,43 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
                 <button class="btn btn-outline" id="stopRecBtn" style="display:none" onclick="stopSpeechRecognition()">停止识别</button>
               </div>
               <div class="subtitle-timeline" id="subtitleTimeline"></div>
+            </div>
+
+            <!-- OCR Screen Subtitle Panel -->
+            <div id="ocrPanel" style="display:none">
+              <div class="recognition-status" id="ocrStatus">
+                <div class="rec-dot"></div>
+                <span id="ocrStatusText">点击"提取字幕"从视频画面中识别烧录字幕文字</span>
+              </div>
+              <div style="font-size:.72rem;color:var(--text2);margin-bottom:.5rem;padding:.5rem;background:var(--surface2);border-radius:6px;line-height:1.6">
+                <strong style="color:var(--accent)">画面字幕提取：</strong>自动从视频画面底部识别烧录（硬字幕）文字。<br>
+                系统会每隔 2 秒截取一帧画面，用 OCR 识别底部字幕区域的文字，自动去重后生成带时间戳的字幕。
+              </div>
+              <div style="margin-bottom:.6rem">
+                <label style="font-size:.78rem;color:var(--text);display:flex;align-items:center;gap:.5rem">
+                  字幕位置：
+                  <select id="ocrPosition" style="padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.78rem">
+                    <option value="bottom">底部（默认）</option>
+                    <option value="center">中间</option>
+                    <option value="top">顶部</option>
+                  </select>
+                </label>
+              </div>
+              <div class="scan-progress" id="ocrScanProgress" style="display:none;margin-bottom:.5rem">
+                <div class="scan-bar"><div class="scan-bar-fill" id="ocrScanBarFill"></div></div>
+                <div class="scan-status"><span id="ocrScanStatusText">正在提取字幕…</span><span id="ocrScanPercent">0%</span></div>
+              </div>
+              <div class="actions" style="margin-bottom:.8rem">
+                <button class="btn btn-primary" id="startOcrBtn" onclick="startOCRExtraction()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                    <path d="M7 7h3v3H7zM14 7h3v3h-3zM7 14h3v3H7zM14 14h3v3h-3z"></path>
+                  </svg>
+                  提取画面字幕
+                </button>
+                <button class="btn btn-outline" id="stopOcrBtn" style="display:none" onclick="stopOCRExtraction()">停止提取</button>
+              </div>
+              <div class="subtitle-timeline" id="ocrTimeline"></div>
             </div>
 
             <!-- SRT Upload Panel -->
@@ -1937,7 +1976,7 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
 </button>
 <div class="rules-overlay" id="rulesOverlay" style=""></div>
-<aside class="rules-sidebar" id="rulesSidebar" style="position: absolute !important;">
+<aside class="rules-sidebar" id="rulesSidebar" style="">
   <div class="rules-sidebar-header" style="">
     <h3>抖音短剧平台规范</h3>
     <button class="rules-close">
@@ -2137,7 +2176,7 @@ const WORD_DB = [
   {cat:'伦理情感',bad:'妓女',good:'风尘女子',rule:'R2,H1'},
   {cat:'伦理情感',bad:'色情',good:'—',rule:'R2'},
   {cat:'伦理情感',bad:'裸体',good:'坦诚相见',rule:'R2'},
-  {cat:'伦理情感',bad:'约炮',good:'一夜情',rule:'R2,H1'},
+  {cat:'伦理情感',bad:'约炮',good:'露水情缘',rule:'R2,H1'},
   {cat:'伦理情感',bad:'一夜情',good:'露水情缘',rule:'R2,H1'},
   {cat:'伦理情感',bad:'同居',good:'住一起',rule:'R1'},
   {cat:'伦理情感',bad:'怀孕',good:'有了',rule:'R1'},
@@ -2177,6 +2216,61 @@ const WORD_DB = [
   {cat:'财富金融',bad:'年薪百万',good:'高薪',rule:'R1'},
   {cat:'财富金融',bad:'财务自由',good:'不缺钱',rule:'R1'},
   {cat:'财富金融',bad:'躺赚',good:'被动收入',rule:'R1'},
+
+  // — 封建迷信 —
+  {cat:'封建迷信',bad:'鬼上身',good:'被附体',rule:'R3'},
+  {cat:'封建迷信',bad:'驱鬼',good:'净化',rule:'R3'},
+  {cat:'封建迷信',bad:'算命',good:'占卜',rule:'R3'},
+  {cat:'封建迷信',bad:'风水',good:'布局',rule:'R3'},
+  {cat:'封建迷信',bad:'符咒',good:'神秘力量',rule:'R3'},
+  {cat:'封建迷信',bad:'降头',good:'暗术',rule:'R3'},
+  {cat:'封建迷信',bad:'养小鬼',good:'养灵',rule:'R3'},
+  {cat:'封建迷信',bad:'请神',good:'祈福',rule:'R3'},
+  {cat:'封建迷信',bad:'通灵',good:'感应',rule:'R3'},
+  {cat:'封建迷信',bad:'阴阳眼',good:'特殊能力',rule:'R3'},
+  {cat:'封建迷信',bad:'厉鬼',good:'怨灵',rule:'R3'},
+  {cat:'封建迷信',bad:'邪祟',good:'不洁之物',rule:'R3'},
+  {cat:'封建迷信',bad:'做法事',good:'举行仪式',rule:'R3'},
+  {cat:'封建迷信',bad:'下蛊',good:'施术',rule:'R3'},
+  {cat:'封建迷信',bad:'巫蛊',good:'秘术',rule:'R3'},
+  {cat:'封建迷信',bad:'跳大神',good:'神秘仪式',rule:'R3'},
+  {cat:'封建迷信',bad:'血祭',good:'献祭',rule:'R3'},
+  {cat:'封建迷信',bad:'招魂',good:'唤灵',rule:'R3'},
+  {cat:'封建迷信',bad:'转世',good:'轮回',rule:'R3'},
+  {cat:'封建迷信',bad:'投胎',good:'转生',rule:'R3'},
+  {cat:'封建迷信',bad:'阎王',good:'冥界之主',rule:'R3'},
+  {cat:'封建迷信',bad:'地府',good:'冥界',rule:'R3'},
+
+  // — 广告法/绝对化用语 —
+  {cat:'广告法违规',bad:'最好',good:'很好',rule:'R1'},
+  {cat:'广告法违规',bad:'最佳',good:'出色',rule:'R1'},
+  {cat:'广告法违规',bad:'最优',good:'优质',rule:'R1'},
+  {cat:'广告法违规',bad:'最高级',good:'高级',rule:'R1'},
+  {cat:'广告法违规',bad:'国家级',good:'高品质',rule:'R1'},
+  {cat:'广告法违规',bad:'世界级',good:'国际化',rule:'R1'},
+  {cat:'广告法违规',bad:'全网最低',good:'超值优惠',rule:'R1'},
+  {cat:'广告法违规',bad:'史上最强',good:'超强',rule:'R1'},
+  {cat:'广告法违规',bad:'100%',good:'高度',rule:'R1'},
+  {cat:'广告法违规',bad:'万能',good:'多功能',rule:'R1'},
+  {cat:'广告法违规',bad:'永久',good:'持久',rule:'R1'},
+  {cat:'广告法违规',bad:'国家级认证',good:'品质认证',rule:'R1'},
+
+  // — 网络用语/人设敏感 —
+  {cat:'网络敏感',bad:'舔狗',good:'深情',rule:'R1,H1'},
+  {cat:'网络敏感',bad:'绿茶',good:'心机',rule:'R1'},
+  {cat:'网络敏感',bad:'白莲花',good:'清纯人设',rule:'R1'},
+  {cat:'网络敏感',bad:'圣母',good:'大善人',rule:'R1'},
+  {cat:'网络敏感',bad:'pua',good:'精神控制',rule:'R1,H1'},
+  {cat:'网络敏感',bad:'PUA',good:'精神控制',rule:'R1,H1'},
+  {cat:'网络敏感',bad:'养鱼',good:'暧昧多人',rule:'R1,H1'},
+  {cat:'网络敏感',bad:'海王',good:'花心',rule:'R1,H1'},
+  {cat:'网络敏感',bad:'渣男',good:'负心人',rule:'R1'},
+  {cat:'网络敏感',bad:'渣女',good:'负心人',rule:'R1'},
+  {cat:'网络敏感',bad:'舔屏',good:'心动',rule:'R2,H2'},
+  {cat:'网络敏感',bad:'开车',good:'暗示',rule:'R2,H2'},
+  {cat:'网络敏感',bad:'福利',good:'惊喜',rule:'R2'},
+  {cat:'网络敏感',bad:'擦边',good:'边缘',rule:'R2,H2'},
+  {cat:'网络敏感',bad:'软色情',good:'暗示向',rule:'R2,H2'},
 
   // — 双男主/耽美 —
   {cat:'双男主/耽美',bad:'双男主',good:'双主CP',rule:'R1,H1'},
@@ -2544,6 +2638,14 @@ document.querySelectorAll('.rule-content').forEach(el=>{
   el.style.maxHeight = el.scrollHeight + 'px';
 });
 
+// Rules sidebar event listeners
+document.querySelector('.rules-toggle').addEventListener('click', toggleRules);
+document.querySelector('.rules-close').addEventListener('click', toggleRules);
+document.getElementById('rulesOverlay').addEventListener('click', toggleRules);
+document.querySelectorAll('.rule-section h4').forEach(h4 => {
+  h4.addEventListener('click', () => toggleSection(h4));
+});
+
 // ============ Video Analysis ============
 const MAX_VIDEO_DURATION = 300; // 5 minutes in seconds
 let videoFile = null;
@@ -2842,12 +2944,21 @@ function clearVideoAnalysis() {
   subtitleData = [];
   document.getElementById('subtitleTimeline').innerHTML = '';
   document.getElementById('srtTimeline').innerHTML = '';
+  const ocrTimeline = document.getElementById('ocrTimeline');
+  if (ocrTimeline) ocrTimeline.innerHTML = '';
   
   // Reset recognition status
   const recStatus = document.getElementById('recognitionStatus');
   if (recStatus) recStatus.classList.remove('listening');
   const recStatusText = document.getElementById('recStatusText');
   if (recStatusText) recStatusText.textContent = '点击"开始识别"自动提取视频语音转文字';
+  
+  // Reset OCR status
+  const ocrStatus = document.getElementById('ocrStatus');
+  if (ocrStatus) ocrStatus.classList.remove('listening');
+  const ocrStatusText = document.getElementById('ocrStatusText');
+  if (ocrStatusText) ocrStatusText.textContent = '点击"提取字幕"从视频画面中识别烧录字幕文字';
+  if (ocrRunning) stopOCRExtraction();
   
   videoFrames = [];
   document.querySelectorAll('.frame-thumb').forEach(thumb => thumb.classList.remove('flagged'));
@@ -2909,6 +3020,7 @@ function switchSubtitleSource(source) {
     tab.classList.toggle('active', tab.dataset.source === source);
   });
   document.getElementById('speechPanel').style.display = source === 'speech' ? 'block' : 'none';
+  document.getElementById('ocrPanel').style.display = source === 'ocr' ? 'block' : 'none';
   document.getElementById('srtPanel').style.display = source === 'srt' ? 'block' : 'none';
   document.getElementById('manualPanel').style.display = source === 'manual' ? 'block' : 'none';
 }
@@ -3063,6 +3175,176 @@ function stopSpeechRecognition() {
   }
 }
 
+// ============ OCR Screen Subtitle Extraction ============
+let ocrWorker = null;
+let ocrRunning = false;
+
+async function startOCRExtraction() {
+  const video = document.getElementById('videoPlayer');
+  if (!video.src || video.duration === 0) {
+    showToast('请先上传视频');
+    return;
+  }
+
+  ocrRunning = true;
+  document.getElementById('startOcrBtn').style.display = 'none';
+  document.getElementById('stopOcrBtn').style.display = 'inline-flex';
+  document.getElementById('ocrStatus').classList.add('listening');
+  document.getElementById('ocrStatusText').textContent = '正在加载 OCR 引擎（首次约需10秒）…';
+  document.getElementById('ocrScanProgress').style.display = 'block';
+
+  const timeline = document.getElementById('ocrTimeline');
+  timeline.innerHTML = '';
+  
+  // Use OCR data as subtitle source
+  subtitleData = [];
+  currentSubtitleSource = 'ocr';
+
+  // Initialize Tesseract.js worker
+  try {
+    ocrWorker = await Tesseract.createWorker('chi_sim+eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          // Don't update progress here, we'll do it per frame
+        }
+      }
+    });
+  } catch (e) {
+    showToast('OCR 引擎加载失败: ' + e.message);
+    stopOCRExtraction();
+    return;
+  }
+
+  document.getElementById('ocrStatusText').textContent = 'OCR 引擎就绪，正在提取字幕…';
+
+  // Create hidden canvas for frame extraction
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  canvas.width = vw;
+  canvas.height = vh;
+
+  // Determine subtitle crop region based on user selection
+  const position = document.getElementById('ocrPosition').value;
+  let cropY, cropH;
+  if (position === 'bottom') {
+    cropH = Math.round(vh * 0.2);
+    cropY = vh - cropH;
+  } else if (position === 'center') {
+    cropH = Math.round(vh * 0.2);
+    cropY = Math.round(vh * 0.4);
+  } else { // top
+    cropH = Math.round(vh * 0.2);
+    cropY = 0;
+  }
+  const cropX = Math.round(vw * 0.1);
+  const cropW = Math.round(vw * 0.8);
+
+  // Create a smaller canvas for the cropped subtitle region (scaled up 2x for better OCR)
+  const subCanvas = document.createElement('canvas');
+  const subCtx = subCanvas.getContext('2d', { willReadFrequently: true });
+  subCanvas.width = cropW;
+  subCanvas.height = cropH;
+
+  // Process frames every 2 seconds
+  const duration = video.duration;
+  const interval = 2; // seconds
+  const totalFrames = Math.ceil(duration / interval);
+  let processedFrames = 0;
+  let lastText = '';
+
+  // Create a temporary video element to seek without affecting the main player
+  const tempVideo = document.createElement('video');
+  tempVideo.src = video.src;
+  tempVideo.preload = 'auto';
+  tempVideo.muted = true;
+  
+  await new Promise(resolve => {
+    tempVideo.onloadeddata = resolve;
+    tempVideo.onerror = () => { showToast('无法加载视频进行字幕提取'); stopOCRExtraction(); resolve(); };
+  });
+
+  for (let t = 0; t < duration && ocrRunning; t += interval) {
+    // Seek to time
+    tempVideo.currentTime = t;
+    await new Promise(resolve => {
+      tempVideo.onseeked = resolve;
+      setTimeout(resolve, 2000); // timeout fallback
+    });
+
+    if (!ocrRunning) break;
+
+    // Draw frame to canvas
+    ctx.drawImage(tempVideo, 0, 0, vw, vh);
+    
+    // Crop subtitle region
+    subCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+    // Preprocess: convert to grayscale, increase contrast, threshold for white text
+    const imageData = subCtx.getImageData(0, 0, cropW, cropH);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      // Convert to luminance
+      const lum = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      // High threshold to isolate white/bright text, invert for Tesseract (black text on white bg)
+      const val = lum > 180 ? 0 : 255;
+      data[i] = val;
+      data[i+1] = val;
+      data[i+2] = val;
+    }
+    subCtx.putImageData(imageData, 0, 0);
+
+    // OCR the processed frame
+    try {
+      const result = await ocrWorker.recognize(subCanvas);
+      const text = result.data.text.trim().replace(/\s+/g, '');
+      
+      if (text && text.length > 1 && text !== lastText) {
+        // Filter out noise (very short or all-same-character strings)
+        const uniqueChars = new Set(text).size;
+        if (uniqueChars >= 2 || text.length >= 3) {
+          subtitleData.push({ time: t, text, violations: [] });
+          addSubtitleToTimeline(subtitleData.length - 1, timeline);
+          lastText = text;
+          document.getElementById('ocrStatusText').textContent = `提取中…已获取 ${subtitleData.length} 条字幕 (${formatTime(t)})`;
+        }
+      }
+    } catch (e) {
+      console.error('OCR error at', t, e);
+    }
+
+    processedFrames++;
+    const pct = Math.round((processedFrames / totalFrames) * 100);
+    document.getElementById('ocrScanBarFill').style.width = pct + '%';
+    document.getElementById('ocrScanPercent').textContent = pct + '%';
+  }
+
+  stopOCRExtraction();
+  showToast(subtitleData.length > 0 ? `字幕提取完成，共 ${subtitleData.length} 条` : '未识别到字幕内容，请尝试调整字幕位置后重试');
+}
+
+function stopOCRExtraction() {
+  ocrRunning = false;
+  document.getElementById('startOcrBtn').style.display = 'inline-flex';
+  document.getElementById('stopOcrBtn').style.display = 'none';
+  document.getElementById('ocrStatus').classList.remove('listening');
+  document.getElementById('ocrScanProgress').style.display = 'none';
+  
+  if (ocrWorker) {
+    ocrWorker.terminate();
+    ocrWorker = null;
+  }
+  
+  const count = subtitleData.length;
+  if (count > 0) {
+    document.getElementById('ocrStatusText').textContent = `提取完成，共 ${count} 条字幕`;
+  } else {
+    document.getElementById('ocrStatusText').textContent = '未识别到字幕内容。可尝试切换字幕位置（底部/中间/顶部）后重试';
+  }
+}
+
 function addSubtitleToTimeline(index, container) {
   const sub = subtitleData[index];
   const div = document.createElement('div');
@@ -3127,7 +3409,7 @@ function analyzeVideo() {
   
   if (currentSubtitleSource === 'manual') {
     transcript = document.getElementById('transcriptInput').value.trim();
-  } else if (currentSubtitleSource === 'speech' || currentSubtitleSource === 'srt') {
+  } else if (currentSubtitleSource === 'speech' || currentSubtitleSource === 'srt' || currentSubtitleSource === 'ocr') {
     transcript = subtitleData.map(s => s.text).join(' ');
   }
   
@@ -3433,49 +3715,76 @@ async function performBGMAnalysis() {
       analysis.warnings.push({level:'low', msg:'音频存在削峰失真（峰值 ' + Math.round(analysis.peakVolume*100) + '%），可能影响听感'});
     }
     
-    // Frequency analysis using FFT
-    const offlineCtx = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
-    const source = offlineCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    const analyser = offlineCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    source.connect(analyser);
-    analyser.connect(offlineCtx.destination);
-    source.start();
-    
     // Check audio duration
     if (audioBuffer.duration < 3) {
       analysis.warnings.push({level:'low', msg:'音频时长过短（' + audioBuffer.duration.toFixed(1) + '秒），可能不是完整BGM'});
     }
     
-    // Analyze frequency distribution
-    const freqData = new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(freqData);
-    
-    let lowEnergy = 0, midEnergy = 0, highEnergy = 0;
-    const binHz = audioBuffer.sampleRate / analyser.fftSize;
-    for (let i = 0; i < freqData.length; i++) {
-      const freq = i * binHz;
-      const energy = Math.pow(10, freqData[i] / 20);
-      if (freq < 300) lowEnergy += energy;
-      else if (freq < 4000) midEnergy += energy;
-      else highEnergy += energy;
-    }
-    
-    const totalEnergy = lowEnergy + midEnergy + highEnergy;
-    if (totalEnergy > 0) {
-      const lowRatio = lowEnergy / totalEnergy;
-      const midRatio = midEnergy / totalEnergy;
-      const highRatio = highEnergy / totalEnergy;
+    // Frequency analysis using OfflineAudioContext + BiquadFilter
+    try {
+      const sampleRate = audioBuffer.sampleRate;
       
-      if (midRatio > 0.6) {
-        analysis.frequencyProfile = 'vocal-heavy';
-        analysis.warnings.push({level:'high', msg:'音频中频（人声频段）能量占比过高（' + Math.round(midRatio*100) + '%），可能包含受版权保护的人声演唱'});
-        analysis.suggestions.push('建议使用纯音乐/无人声的BGM，或使用剪映/抖音官方音乐库中的音乐');
-      } else if (lowRatio > 0.5) {
-        analysis.frequencyProfile = 'bass-heavy';
-        analysis.warnings.push({level:'medium', msg:'低频能量较强，可能是DJ/电子音乐风格，部分平台对电子Remix版本有版权检测'});
+      // Mid-frequency (vocal range 300-4000Hz) energy
+      const midCtx = new OfflineAudioContext(1, audioBuffer.length, sampleRate);
+      const midSrc = midCtx.createBufferSource();
+      midSrc.buffer = audioBuffer;
+      const midHP = midCtx.createBiquadFilter();
+      midHP.type = 'highpass'; midHP.frequency.value = 300;
+      const midLP = midCtx.createBiquadFilter();
+      midLP.type = 'lowpass'; midLP.frequency.value = 4000;
+      midSrc.connect(midHP); midHP.connect(midLP); midLP.connect(midCtx.destination);
+      midSrc.start();
+      const midBuf = await midCtx.startRendering();
+      const midData = midBuf.getChannelData(0);
+      let midEnergy = 0;
+      for (let i = 0; i < midData.length; i++) midEnergy += midData[i] * midData[i];
+      midEnergy = Math.sqrt(midEnergy / midData.length);
+      
+      // Low-frequency (<300Hz) energy
+      const lowCtx = new OfflineAudioContext(1, audioBuffer.length, sampleRate);
+      const lowSrc = lowCtx.createBufferSource();
+      lowSrc.buffer = audioBuffer;
+      const lowLP = lowCtx.createBiquadFilter();
+      lowLP.type = 'lowpass'; lowLP.frequency.value = 300;
+      lowSrc.connect(lowLP); lowLP.connect(lowCtx.destination);
+      lowSrc.start();
+      const lowBuf = await lowCtx.startRendering();
+      const lowData = lowBuf.getChannelData(0);
+      let lowEnergy = 0;
+      for (let i = 0; i < lowData.length; i++) lowEnergy += lowData[i] * lowData[i];
+      lowEnergy = Math.sqrt(lowEnergy / lowData.length);
+      
+      // High-frequency (>4000Hz) energy
+      const highCtx = new OfflineAudioContext(1, audioBuffer.length, sampleRate);
+      const highSrc = highCtx.createBufferSource();
+      highSrc.buffer = audioBuffer;
+      const highHP = highCtx.createBiquadFilter();
+      highHP.type = 'highpass'; highHP.frequency.value = 4000;
+      highSrc.connect(highHP); highHP.connect(highCtx.destination);
+      highSrc.start();
+      const highBuf = await highCtx.startRendering();
+      const highData = highBuf.getChannelData(0);
+      let highEnergy = 0;
+      for (let i = 0; i < highData.length; i++) highEnergy += highData[i] * highData[i];
+      highEnergy = Math.sqrt(highEnergy / highData.length);
+      
+      const totalEnergy = lowEnergy + midEnergy + highEnergy;
+      if (totalEnergy > 0) {
+        const lowRatio = lowEnergy / totalEnergy;
+        const midRatio = midEnergy / totalEnergy;
+        const highRatio = highEnergy / totalEnergy;
+        
+        if (midRatio > 0.6) {
+          analysis.frequencyProfile = 'vocal-heavy';
+          analysis.warnings.push({level:'high', msg:'音频中频（人声频段）能量占比过高（' + Math.round(midRatio*100) + '%），可能包含受版权保护的人声演唱'});
+          analysis.suggestions.push('建议使用纯音乐/无人声的BGM，或使用剪映/抖音官方音乐库中的音乐');
+        } else if (lowRatio > 0.5) {
+          analysis.frequencyProfile = 'bass-heavy';
+          analysis.warnings.push({level:'medium', msg:'低频能量较强，可能是DJ/电子音乐风格，部分平台对电子Remix版本有版权检测'});
+        }
       }
+    } catch(freqErr) {
+      console.error('Frequency analysis error:', freqErr);
     }
     
     // Check for common copyrighted patterns
