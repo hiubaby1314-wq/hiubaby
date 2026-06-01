@@ -283,8 +283,8 @@
       <div class="admin-user-list" id="adminUserList"></div>
       
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
-        <h4 style="font-size:14px;margin-bottom:8px">🔧 系統維護</h4>
-        <button class="admin-add-btn" id="revertStableBtn" style="background:#dc2626" onclick="revertToStable()">⚠️ 恢復到穩定版本</button>
+        <h4 style="font-size:14px;margin-bottom:8px">🔧 系统维护</h4>
+        <button class="admin-add-btn" id="revertStableBtn" style="background:#dc2626" onclick="revertToStable()">⚠️ 恢复到稳定版本</button>
         <div class="admin-msg" id="revertMsg"></div>
       </div>
     </div>
@@ -295,8 +295,9 @@
         <span class="user-role" id="userRoleBadge"></span>
       </div>
       <div class="user-actions">
-        <button class="user-action-btn desktop-only" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生圖')">🌐 栗子AI生圖</button>
+        <button class="user-action-btn desktop-only" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生图')">🌐 栗子AI生图</button>
         <button class="user-action-btn desktop-only" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')">🎙️ 栗子配音</button>
+        <button class="user-action-btn desktop-only" onclick="openAppPopup('https://m9qcmfmd.mule.page/', '短劇違規詞檢測')">🔍 短劇違規詞檢測</button>
         <button class="user-action-btn" onclick="openRequestModal()">📩 素材需求</button>
         <button class="user-action-btn admin-notif-btn" id="notifBtn" onclick="openNotifPanel()" style="display:none;position:relative">🔔<span class="notif-badge" id="notifBadge" style="display:none"></span></button>
         <button class="user-action-btn" onclick="openChangePwd()">修改密码</button>
@@ -307,8 +308,9 @@
     <div class="login-prompt" id="loginPrompt">
       <span>👋 欢迎使用栗子素材网，请先登录</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生圖')" style="background:#6366f1">🌐 栗子AI生圖</button>
+        <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://herng9d2.mule.page/', '栗子AI生图')" style="background:#6366f1">🌐 栗子AI生图</button>
         <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')" style="background:#10b981">🎙️ 栗子配音</button>
+        <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://m9qcmfmd.mule.page/', '短劇違規詞檢測')" style="background:#8b5cf6">🔍 短劇違規詞檢測</button>
         <button class="login-prompt-btn" onclick="openRequestModal()" style="background:#f59e0b">📩 素材需求</button>
         <button class="login-prompt-btn" onclick="openLogin()">立即登录</button>
       </div>
@@ -520,11 +522,11 @@
       <button class="modal-close" data-close="batchModal">&times;</button>
       <h3>📦 批量新增素材</h3>
       <p style="font-size:12px;color:#6b7280;margin-bottom:12px">
-        選擇多個文件，每個文件會自動成為一個獨立素材。<br>
-        文件名會作為素材名稱。相同文件名的不同格式（如 xxx.png 和 xxx.fla）會合併為同一個素材。
+        选择多个文件，每个文件会自动成为一个独立素材。<br>
+        文件名会作为素材名称。相同文件名的不同格式（如 xxx.png 和 xxx.fla）会合并为同一个素材。
       </p>
-      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">分類</label><select id="batchCat" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px"><option value="人物">人物</option><option value="表情包">表情包</option><option value="画师寄售">画师寄售</option><option value="背景图">背景图</option><option value="道具栏">道具栏</option><option value="特效">特效</option><option value="限时优惠">限时优惠</option></select></div>
-      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">標籤</label>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">分类</label><select id="batchCat" style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px"><option value="人物">人物</option><option value="表情包">表情包</option><option value="画师寄售">画师寄售</option><option value="背景图">背景图</option><option value="道具栏">道具栏</option><option value="特效">特效</option><option value="限时优惠">限时优惠</option></select></div>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">标签</label>
         <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;font-size:13px">
           <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeNew" checked> <span style="color:#166534;background:#dcfce7;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">new</span></label>
           <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeLimit"> <span style="color:#92400e;background:#fef3c7;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">限时</span></label>
@@ -532,11 +534,11 @@
           <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="batchBadgeVip"> <span style="color:#4f46e5;background:#e0e7ff;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:600">VIP</span></label>
         </div>
       </div>
-      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">選擇文件（支持多選）</label>
+      <div style="margin-bottom:12px"><label style="font-size:13px;color:#6b7280">选择文件（支持多选）</label>
         <input type="file" id="batchFileInput" multiple style="width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;margin-top:4px" onchange="previewBatchFiles(this)">
         <div id="batchFileList" style="max-height:250px;overflow-y:auto;margin-top:8px"></div>
       </div>
-      <button class="modal-submit" id="batchSubmit">批量上傳</button>
+      <button class="modal-submit" id="batchSubmit">批量上传</button>
       <div class="modal-msg" id="batchMsg"></div>
     </div>
   </div>
@@ -710,6 +712,13 @@
       try {
         const d = await fetchWithRetry(4, 30000);
         materials = d.materials;
+
+        // Hide 素材打包 button if no materials have files
+        const hasFiles = materials.some(m => m.uploadedFiles && m.uploadedFiles.length > 0);
+        const packBtn = document.querySelector('[data-cat="素材打包"]');
+        if (packBtn) {
+          packBtn.style.display = hasFiles ? '' : 'none';
+        }
         renderCards();
       } catch(e) {
         console.error("加载失败:", e);
@@ -965,7 +974,7 @@
 
         const settingsIcon = (currentUser && currentUser.role === 'admin') ?
           '<div class="card-settings-wrap"><button class="card-settings-btn" data-settings-idx="'+m.id+'" onclick="event.stopPropagation();toggleSettingsById('+m.id+', this)">⚙</button><div class="card-settings-menu" id="settingsMenu'+m.id+'" style="display:none">'+
-            '<div class="settings-menu-section"><label class="settings-menu-label">標籤</label>'+
+            '<div class="settings-menu-section"><label class="settings-menu-label">标签</label>'+
             '<div style="display:flex;gap:6px;margin-top:4px">'+
             '<label style="display:flex;align-items:center;gap:2px;font-size:12px;cursor:pointer"><input type="checkbox" class="badge-toggle" data-id="'+m.id+'" data-badge="限时" onchange="event.stopPropagation();toggleBadgeById('+m.id+',\'限时\',this.checked)"'+((m.badges||[]).includes('限时')?' checked':'')+'> <span style="color:#92400e;background:#fef3c7;padding:1px 6px;border-radius:3px;font-size:11px">限时</span></label>'+
             '</div></div>'+
@@ -1085,14 +1094,14 @@
     }
 
     async function revertToStable() {
-      if (!confirm('⚠️ 確定要恢復到穩定版本嗎？\n\n這會從 R2 備份恢復數據庫，當前未保存的變更可能會丟失。')) {
+      if (!confirm('⚠️ 确定要恢复到稳定版本吗？\n\n这会从 R2 备份恢复数据库，当前未保存的变更可能会丢失。')) {
         return;
       }
       const btn = document.getElementById('revertStableBtn');
       const msg = document.getElementById('revertMsg');
       btn.disabled = true;
-      btn.textContent = '恢復中...';
-      msg.textContent = '正在從 R2 恢復備份數據庫...';
+      btn.textContent = '恢复中...';
+      msg.textContent = '正在从 R2 恢复备份数据库...';
       msg.style.color = '#059669';
       
       try {
@@ -1103,20 +1112,20 @@
         });
         const d = await r.json();
         if (d.ok) {
-          msg.textContent = '✅ 恢復成功！已恢復 ' + d.materialCount + ' 個素材。頁面將在 3 秒後重新整理...';
+          msg.textContent = '✅ 恢复成功！已恢复 ' + d.materialCount + ' 个素材。页面将在 3 秒后重新加载...';
           msg.style.color = '#059669';
           setTimeout(() => location.reload(), 3000);
         } else {
-          msg.textContent = '❌ 恢復失敗: ' + d.error;
+          msg.textContent = '❌ 恢复失败: ' + d.error;
           msg.style.color = '#dc2626';
           btn.disabled = false;
-          btn.textContent = '⚠️ 恢復到穩定版本';
+          btn.textContent = '⚠️ 恢复到稳定版本';
         }
       } catch (e) {
-        msg.textContent = '❌ 請求失敗: ' + e.message;
+        msg.textContent = '❌ 请求失败: ' + e.message;
         msg.style.color = '#dc2626';
         btn.disabled = false;
-        btn.textContent = '⚠️ 恢復到穩定版本';
+        btn.textContent = '⚠️ 恢复到稳定版本';
       }
     }
     
@@ -1513,9 +1522,10 @@
       panel.style.display = 'block';
       overlay.onclick = closePackPanel;
       
-      panel.innerHTML = '<h3>选择要下载的分类</h3>';
+      panel.innerHTML = '<h3>选择要下载的分类</h3>' + 
+        '<p style="color: #666; font-size: 14px; margin: 10px 0 20px 0;">⏳ 打包需要一些时间，请耐心等待</p>';
 
-      const categories = ['人物', '表情包', '背景图', '道具栏', '画师寄售', '特效'];
+      const categories = ['人物', '表情包', '背景图', '道具栏'];
       categories.forEach(cat => {
         const btn = document.createElement('button');
         btn.className = 'pack-category-btn';
@@ -1545,7 +1555,6 @@
         closePackPanel();
       };
       panel.appendChild(closeBtn);
-    }
       document.body.appendChild(panel);
     }
 
@@ -1642,7 +1651,7 @@
       btn.classList.add('active');
 
       // Handle 素材打包 button
-      if (currentCat === '素材打包') {
+      if (btn.dataset.cat === '素材打包') {
         if (!currentUser) {
           alert('请先登录后再使用素材打包功能');
           currentCat = '人物';
@@ -1952,13 +1961,13 @@
     document.getElementById('batchSubmit').addEventListener('click', async function() {
       if (!currentUser || currentUser.role !== 'admin') return;
       if (batchSelectedFiles.length === 0) {
-        document.getElementById('batchMsg').textContent = '請選擇文件';
+        document.getElementById('batchMsg').textContent = '请选择文件';
         document.getElementById('batchMsg').className = 'modal-msg error';
         return;
       }
 
       this.disabled = true;
-      this.textContent = '上傳中...';
+      this.textContent = '上传中...';
 
       // Group files by name (without extension)
       const groups = {};
@@ -2018,16 +2027,16 @@
           }
         } catch(e) {
           fail++;
-          errors.push(name + ': 網絡錯誤');
+          errors.push(name + ': 网络错误');
         }
         // Update progress
-        this.textContent = '上傳中... ' + (success + fail + renamed) + '/' + total;
+        this.textContent = '上传中... ' + (success + fail + renamed) + '/' + total;
       }
 
       if (success > 0) {
-        let msg = '成功上傳 ' + success + ' 個素材';
-        if (renamed > 0) msg += '（其中 ' + renamed + ' 個名稱重複已自動改名）';
-        if (fail > 0) msg += '，' + fail + ' 個失敗';
+        let msg = '成功上传 ' + success + ' 个素材';
+        if (renamed > 0) msg += '（其中 ' + renamed + ' 个名称重复已自动改名）';
+        if (fail > 0) msg += '，' + fail + ' 个失败';
         if (warnings.length > 0) {
           msg += '\n\n⚠️ 以下素材文件不完整：\n' + warnings.join('\n');
         }
@@ -2037,12 +2046,12 @@
         renderCards();
         setTimeout(() => { document.getElementById('batchModal').classList.remove('active'); }, warnings.length > 0 ? 5000 : 1500);
       } else {
-        document.getElementById('batchMsg').textContent = '上傳失敗：' + errors.join('; ');
+        document.getElementById('batchMsg').textContent = '上传失败：' + errors.join('; ');
         document.getElementById('batchMsg').className = 'modal-msg error';
       }
 
       this.disabled = false;
-      this.textContent = '批量上傳';
+      this.textContent = '批量上传';
     });
 
     // Edit mode toggle
