@@ -2265,7 +2265,7 @@
               background:#fff;border-radius:12px;width:94vw;height:92vh;
               display:flex;flex-direction:column;overflow:hidden;
               box-shadow:0 20px 60px rgba(0,0,0,0.4);
-              animation:appPopIn 0.25s ease;
+              animation:appPopIn 0.25s ease;position:relative;
             }
             @keyframes appPopIn {
               from { transform:scale(0.92);opacity:0 }
@@ -2287,8 +2287,14 @@
             #appPopupIframe {
               flex:1;width:100%;border:none;background:#fff;
             }
+            #mulepage-cover {
+              position:absolute;bottom:0;right:0;width:180px;height:44px;
+              background:#fff;z-index:2147483647;pointer-events:none;
+              border-top-left-radius:8px;
+            }
           </style>
           <div id="appPopupBox">
+            <div id="mulepage-cover"></div>
             <div id="appPopupHeader">
               <span id="appPopupTitle"></span>
               <button onclick="closeAppPopup()" title="關閉">✕</button>
