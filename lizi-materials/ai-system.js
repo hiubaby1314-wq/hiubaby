@@ -37,6 +37,7 @@ function initTables(db) {
       password TEXT NOT NULL,
       balance REAL DEFAULT 0,
       free_credits INTEGER DEFAULT 3,
+      device_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -69,6 +70,9 @@ function initTables(db) {
       FOREIGN KEY (user_id) REFERENCES ai_users(id)
     )
   `);
+
+  // Add device_id column to existing databases
+  try { db.exec('ALTER TABLE ai_users ADD COLUMN device_id TEXT'); } catch(e) {}
 
   // AI生成记录表
   db.exec(`
@@ -124,16 +128,27 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: '密码必须包含特殊符号' });
     }
 
+    const deviceId = req.body.deviceId;
+    if (!deviceId) {
+      return res.status(400).json({ error: '设备标识无效' });
+    }
+
     const db = req.app.locals.db;
     const existing = db.prepare('SELECT id FROM ai_users WHERE phone = ?').get(phone);
     if (existing) {
       return res.status(400).json({ error: '该手机号已注册' });
     }
 
+    // Check if device already has an account
+    const existingDevice = db.prepare('SELECT id FROM ai_users WHERE device_id = ?').get(deviceId);
+    if (existingDevice) {
+      return res.status(400).json({ error: '每台设备仅允许注册一个账号' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = db.prepare(
-      'INSERT INTO ai_users (phone, password, balance, free_credits) VALUES (?, ?, 0, 3)'
-    ).run(phone, hashedPassword);
+      'INSERT INTO ai_users (phone, password, balance, free_credits, device_id) VALUES (?, ?, 0, 3, ?)'
+    ).run(phone, hashedPassword, deviceId);
 
     const token = jwt.sign({ userId: result.lastInsertRowid }, JWT_SECRET, { expiresIn: '30d' });
 
@@ -241,12 +256,15 @@ router.post('/payment/create', authMiddleware, async (req, res) => {
     ).run(req.userId, orderNo, amount, 'pending');
 
     // 初始化支付宝SDK
-    const privateKey = process.env.ALIPAY_PRIVATE_KEY.startsWith('-----')
-      ? process.env.ALIPAY_PRIVATE_KEY
-      : `-----BEGIN RSA PRIVATE KEY-----\n${process.env.ALIPAY_PRIVATE_KEY}\n-----END RSA PRIVATE KEY-----`;
-    const publicKey = process.env.ALIPAY_PUBLIC_KEY.startsWith('-----')
-      ? process.env.ALIPAY_PUBLIC_KEY
-      : `-----BEGIN PUBLIC KEY-----\n${process.env.ALIPAY_PUBLIC_KEY}\n-----END PUBLIC KEY-----`;
+    // Format keys with proper PEM headers and 64-char line wrapping
+    function wrapPemKey(key, header, footer) {
+      if (key.startsWith("-----")) return key;
+      const lines = [];
+      for (let i = 0; i < key.length; i += 64) lines.push(key.substring(i, i + 64));
+      return header + "\n" + lines.join("\n") + "\n" + footer;
+    }
+    const privateKey = wrapPemKey(process.env.ALIPAY_PRIVATE_KEY, "-----BEGIN RSA PRIVATE KEY-----", "-----END RSA PRIVATE KEY-----");
+    const publicKey = wrapPemKey(process.env.ALIPAY_PUBLIC_KEY, "-----BEGIN PUBLIC KEY-----", "-----END PUBLIC KEY-----");
 
     const alipaySdk = new AlipaySdk({
       appId: process.env.ALIPAY_APP_ID,
@@ -255,18 +273,18 @@ router.post('/payment/create', authMiddleware, async (req, res) => {
       signType: 'RSA2'
     });
 
-    const formData = new AlipayFormData();
-    formData.setMethod('get');
-    formData.addField('notifyUrl', 'https://lizisucaiwang.online/api/ai/payment/notify');
-    formData.addField('returnUrl', 'https://lizisucaiwang.online/ai-image.html?payment=success');
-    formData.addField('bizContent', {
-      outTradeNo: orderNo,
-      totalAmount: amount.toFixed(2),
+    const bizContent = {
+      out_trade_no: orderNo,
+      total_amount: amount.toFixed(2),
       subject: `栗子AI生图充值 ${amount}元`,
-      productCode: 'FAST_INSTANT_TRADE_PAY'
-    });
+      product_code: 'FAST_INSTANT_TRADE_PAY'
+    };
 
-    const result = await alipaySdk.pageExec('alipay.trade.page.pay', formData);
+    const result = alipaySdk.pageExecute('alipay.trade.page.pay', 'GET', {
+      bizContent,
+      notifyUrl: 'https://lizisucaiwang.online/api/ai/payment/notify',
+      returnUrl: 'https://lizisucaiwang.online/ai-image.html?payment=success'
+    });
 
     res.json({
       success: true,
@@ -431,6 +449,43 @@ router.get('/transactions', authMiddleware, (req, res) => {
   } catch (err) {
     console.error('Get transactions error:', err);
     res.status(500).json({ error: '获取交易记录失败' });
+  }
+});
+
+// 管理员测试账号（自动创建或获取）
+router.post('/admin/test-account', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const testPhone = '13800000000'; // 管理员测试专用手机号
+    
+    let user = db.prepare('SELECT * FROM ai_users WHERE phone = ?').get(testPhone);
+    
+    if (!user) {
+      // Create test account
+      const hashedPassword = await bcrypt.hash('AdminTest123!', 10);
+      const result = db.prepare(
+        'INSERT INTO ai_users (phone, password, balance, free_credits, device_id) VALUES (?, ?, 0, 99, ?)'
+      ).run(testPhone, hashedPassword, 'admin_test_device');
+      
+      user = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(result.lastInsertRowid);
+      console.log('Created admin test account:', testPhone);
+    }
+    
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+    
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        balance: user.balance,
+        freeCredits: user.free_credits
+      }
+    });
+  } catch (err) {
+    console.error('Admin test account error:', err);
+    res.status(500).json({ error: '创建测试账号失败' });
   }
 });
 
