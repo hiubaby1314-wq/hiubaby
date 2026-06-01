@@ -395,6 +395,14 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
 
 .violation-tag .vt-fix { color: var(--safe); }
 
+.sentence-result { display: flex; gap: .7rem; padding: .7rem .8rem; margin-bottom: .5rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; transition: border-color .2s; }
+.sentence-result.has-violation { border-left: 3px solid var(--danger); }
+.sentence-result:not(.has-violation) { border-left: 3px solid var(--safe); }
+.sentence-num { font-family: var(--font-display); font-size: .75rem; font-weight: 700; color: var(--text2); min-width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); flex-shrink: 0; }
+.sentence-result.has-violation .sentence-num { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+.sentence-body { flex: 1; min-width: 0; }
+.sentence-text { font-size: .88rem; line-height: 1.8; color: var(--text); word-break: break-all; }
+
 </style>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2417,7 +2425,7 @@ function detectAndReplace(){
   const input = document.getElementById('inputText').value;
   if(!input.trim()){showToast('请先输入文案内容');return}
   const {html, text, count, rules, violations} = process(input, true);
-  document.getElementById('outputArea').innerHTML = html + buildViolationList(violations) + buildRulesSummary(rules);
+  document.getElementById('outputArea').innerHTML = buildSentenceResults(input, violations, rules, true) + buildRulesSummary(rules);
   resultText = text;
   updateStats(input.length, count, count);
 }
@@ -2426,28 +2434,84 @@ function detectOnly(){
   const input = document.getElementById('inputText').value;
   if(!input.trim()){showToast('请先输入文案内容');return}
   const {html, text, count, rules, violations} = process(input, false);
-  document.getElementById('outputArea').innerHTML = html + buildViolationList(violations) + buildRulesSummary(rules);
+  document.getElementById('outputArea').innerHTML = buildSentenceResults(input, violations, rules, false) + buildRulesSummary(rules);
   resultText = text;
   updateStats(input.length, count, 0);
 }
 
-function buildViolationList(violations) {
-  if (!violations || violations.length === 0) return '';
-  let html = '<div class="violation-detail-section">';
-  html += '<div class="violation-detail-header">';
-  html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-  html += ' 违规句子逐条对比（共 ' + violations.length + ' 处）</div>';
-  violations.forEach((v, i) => {
-    const ruleCodes = v.rule ? v.rule.split(',').map(r => '<span class="rule-code">' + r + '</span>').join('') : '';
-    html += '<div class="violation-detail-item">';
-    html += '<div class="vd-num">#' + (i+1) + '</div>';
-    html += '<div class="vd-content">';
-    html += '<div class="vd-row vd-before"><span class="vd-label">原文</span>' + escapeHtml(v.sentence) + '</div>';
-    html += '<div class="vd-row vd-after"><span class="vd-label">修改</span>' + escapeHtml(v.fixedSentence) + '</div>';
-    html += '<div class="vd-meta">' + ruleCodes + ' <span class="vd-cat">' + v.cat + '</span> <span class="vd-word">违规词：<s>' + escapeHtml(v.bad) + '</s> → ' + escapeHtml(v.good || '删除') + '</span></div>';
+function buildSentenceResults(input, violations, rules, doReplace) {
+  // Split input into sentences, keeping punctuation attached
+  const rawParts = input.split(/([。！？!?\n]+)/);
+  const sentences = [];
+  for (let i = 0; i < rawParts.length; i += 2) {
+    const text = (rawParts[i] || '') + (rawParts[i+1] || '');
+    if (text.trim()) sentences.push(text.trim());
+  }
+  // If no sentence-ending punctuation, treat whole input as one sentence
+  if (sentences.length === 0 && input.trim()) sentences.push(input.trim());
+
+  // Group violations by sentence text
+  const sentenceMap = new Map();
+  violations.forEach(v => {
+    if (!sentenceMap.has(v.sentence)) sentenceMap.set(v.sentence, []);
+    sentenceMap.get(v.sentence).push(v);
+  });
+
+  let html = '';
+  let hasViolation = false;
+
+  sentences.forEach((sent, idx) => {
+    const vList = sentenceMap.get(sent) || [];
+    if (vList.length > 0) hasViolation = true;
+
+    // Build highlighted version of this sentence
+    let sentHtml = escapeHtml(sent);
+    const processed = new Set();
+    // Sort by length desc to match longer words first
+    const sortedRules = [...WORD_DB].sort((a,b) => b.bad.length - a.bad.length);
+    for (const rule of sortedRules) {
+      if (processed.has(rule.bad)) continue;
+      const escaped = escapeRegex(rule.bad);
+      const regex = new RegExp(escaped, 'g');
+      if (regex.test(sentHtml)) {
+        processed.add(rule.bad);
+        const ruleInfo = rule.rule ? ' [' + rule.rule + ']' : '';
+        if (doReplace && rule.good) {
+          sentHtml = sentHtml.replace(new RegExp(escaped, 'g'),
+            '<span class="word-good" title="原: ' + rule.bad + ruleInfo + '">' + escapeHtml(rule.good) + '</span>');
+        } else {
+          sentHtml = sentHtml.replace(new RegExp(escaped, 'g'),
+            '<span class="word-bad" title="违规' + ruleInfo + ' · ' + rule.cat + '">' + rule.bad + '</span>');
+        }
+      }
+    }
+
+    // Build violation tags for this sentence
+    let tagsHtml = '';
+    if (vList.length > 0) {
+      const uniqueWords = [];
+      const seen = new Set();
+      vList.forEach(v => { if (!seen.has(v.bad)) { seen.add(v.bad); uniqueWords.push(v); }});
+      tagsHtml = '<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.5rem">';
+      uniqueWords.forEach(v => {
+        const ruleCodes = v.rule ? v.rule.split(',').map(r => '<span class="rule-code" style="font-size:.55rem">' + r + '</span>').join('') : '';
+        tagsHtml += '<div class="violation-tag">' + ruleCodes + '<span class="vt-word">' + escapeHtml(v.bad) + '</span><span class="vt-arrow">→</span><span class="vt-fix">' + escapeHtml(v.good || '删除') + '</span></div>';
+      });
+      tagsHtml += '</div>';
+    }
+
+    html += '<div class="sentence-result' + (vList.length > 0 ? ' has-violation' : '') + '">';
+    html += '<div class="sentence-num">' + (idx + 1) + '</div>';
+    html += '<div class="sentence-body">';
+    html += '<div class="sentence-text">' + sentHtml + '</div>';
+    html += tagsHtml;
     html += '</div></div>';
   });
-  html += '</div>';
+
+  if (!hasViolation && violations.length === 0) {
+    html = '<div style="text-align:center;padding:1.5rem;color:var(--safe)"><span style="font-size:1.5rem">✓</span><br><span style="font-size:.88rem">未检测到违规内容，文案安全</span></div>';
+  }
+
   return html;
 }
 
