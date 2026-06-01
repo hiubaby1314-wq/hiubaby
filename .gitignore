@@ -1,0 +1,14 @@
+# Secrets / env
+*.env
+.env.*
+**/ecosystem.config.js
+
+# Backups
+*.bak
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
