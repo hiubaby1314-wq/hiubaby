@@ -1070,41 +1070,76 @@ app.post('/api/snapshot/restore', async (req, res) => {
   }
 });
 
-// === Audio Transcription (Whisper API) ===
+// === Audio Transcription (local whisper.cpp) ===
+const { execFile } = require('child_process');
+const os = require('os');
+
+const WHISPER_BIN = '/opt/whisper.cpp/build/bin/whisper-cli';
+const WHISPER_MODEL = '/opt/whisper.cpp/models/ggml-tiny.bin';
+
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.json({ ok: false, error: 'No audio file provided' });
 
+  const tmpDir = os.tmpdir();
+  const id = crypto.randomUUID();
+  const inputFile = path.join(tmpDir, `audio_${id}.webm`);
+  const wavFile = path.join(tmpDir, `audio_${id}.wav`);
+
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-    if (!apiKey) return res.json({ ok: false, error: 'API key not configured' });
+    // Save uploaded audio to temp file
+    fs.writeFileSync(inputFile, req.file.buffer);
 
-    // Send to Whisper API
-    const FormData = require('form-data');
-    const form = new FormData();
-    form.append('file', req.file.buffer, { filename: 'audio.webm', contentType: req.file.mimetype });
-    form.append('model', 'whisper-1');
-    form.append('language', 'zh');
-    form.append('response_format', 'verbose_json');
-
-    const resp = await fetch(`${baseUrl}/audio/transcriptions`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, ...form.getHeaders() },
-      body: form
+    // Convert to 16kHz mono WAV using ffmpeg
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', ['-y', '-i', inputFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wavFile],
+        { timeout: 30000 }, (err) => err ? reject(err) : resolve());
     });
 
-    const data = await resp.json();
-    if (data.error) return res.json({ ok: false, error: data.error.message || JSON.stringify(data.error) });
+    // Run whisper.cpp
+    const output = await new Promise((resolve, reject) => {
+      execFile(WHISPER_BIN, [
+        '-m', WHISPER_MODEL,
+        '-f', wavFile,
+        '-l', 'zh',
+        '-oj',  // output JSON with segments
+        '-of', path.join(tmpDir, `whisper_${id}`)
+      ], { timeout: 120000 }, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
 
-    // Parse segments with timestamps
-    const segments = (data.segments || []).map(seg => ({
-      time: seg.start,
-      text: seg.text.trim()
+    // Read whisper JSON output
+    const jsonFile = path.join(tmpDir, `whisper_${id}.json`);
+    let data;
+    if (fs.existsSync(jsonFile)) {
+      data = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+    } else {
+      // Fallback: run again with text output
+      const textOutput = await new Promise((resolve, reject) => {
+        execFile(WHISPER_BIN, [
+          '-m', WHISPER_MODEL, '-f', wavFile, '-l', 'zh', '--no-timestamps'
+        ], { timeout: 120000 }, (err, stdout) => err ? reject(err) : resolve(stdout));
+      });
+      data = { text: textOutput, segments: [] };
+    }
+
+    // Parse segments
+    const segments = (data.transcription || data.segments || []).map(seg => ({
+      time: seg.offsets ? seg.offsets.from / 1000 : (seg.start || 0),
+      text: (seg.text || '').trim()
     })).filter(s => s.text);
 
-    res.json({ ok: true, text: data.text || '', segments });
+    const fullText = data.text || segments.map(s => s.text).join('');
+
+    // Cleanup temp files
+    [inputFile, wavFile, jsonFile].forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
+
+    res.json({ ok: true, text: fullText, segments });
   } catch (e) {
     console.error('[Transcribe] Error:', e.message);
+    // Cleanup
+    [inputFile, wavFile].forEach(f => { try { fs.unlinkSync(f); } catch(e) {} });
     res.json({ ok: false, error: e.message });
   }
 });
