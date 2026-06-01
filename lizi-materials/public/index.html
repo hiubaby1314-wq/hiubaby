@@ -1004,9 +1004,12 @@
         // Get first uploaded image (png/gif/jpg) for card display
         // Use f.ext (always ASCII-safe like .png) instead of f.name (may contain Chinese characters)
         const imgFiles = (m.uploadedFiles||[]).filter(f => /\.(png|gif|jpg|jpeg|webp)$/i.test(f.ext || f.name || ''));
+        const vidFiles = (m.uploadedFiles||[]).filter(f => /\.(mp4|webm|mov|avi|mkv)$/i.test(f.ext || f.name || ''));
         let cardImgHtml = '';
         if (imgFiles.length > 0) {
           cardImgHtml = '<img class="card-img-inner" src="'+imgFiles[0].path+'" alt="'+m.name+'" style="object-fit:contain;background:#f9fafb;" oncontextmenu="return false" ondragstart="return false" onerror="this.parentElement.innerHTML=\'<div class=card-img-inner style=background:'+gradients[(m.gradient||0)%gradients.length]+';display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:11px>\u5716\u7247\u8f09\u5165\u5931\u6557: '+imgFiles[0].path+'</div>\'">';
+        } else if (vidFiles.length > 0) {
+          cardImgHtml = '<video class="card-img-inner" src="'+vidFiles[0].path+'" muted preload="metadata" style="object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
         } else {
           cardImgHtml = '<div class="card-img-inner" style="background:'+gradients[(m.gradient||0) % gradients.length]+'"></div>';
         }
@@ -1438,10 +1441,14 @@
       // Everyone can preview images, only logged-in users can download
       // Use f.ext (always ASCII-safe like .png) instead of f.name (may contain Chinese characters)
       const imgFiles = (m.uploadedFiles||[]).filter(f => /\.(png|gif|jpg|jpeg|webp)$/i.test(f.ext || f.name || ''));
+      const vidFiles = (m.uploadedFiles||[]).filter(f => /\.(mp4|webm|mov|avi|mkv)$/i.test(f.ext || f.name || ''));
 
       if (imgFiles.length > 0) {
         previewEl.innerHTML = '<img src="'+imgFiles[0].path+'" alt="'+m.name+'" style="max-width:100%;max-height:60vh;object-fit:contain;" oncontextmenu="return false" ondragstart="return false">';
         previewEl.style.background = 'none';
+      } else if (vidFiles.length > 0) {
+        previewEl.innerHTML = '<video src="'+vidFiles[0].path+'" controls playsinline preload="metadata" style="max-width:100%;max-height:60vh;object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
+        previewEl.style.background = '#000';
       } else {
         previewEl.innerHTML = '';
         previewEl.style.background = gradients[(m.gradient||0) % gradients.length];
@@ -1461,6 +1468,20 @@
             t.classList.add('active');
             previewEl.innerHTML = '<img src="'+img.path+'" alt="'+m.name+'" style="max-width:100%;max-height:60vh;object-fit:contain;" oncontextmenu="return false" ondragstart="return false">';
             previewEl.style.background = 'none';
+          };
+          thumbs.appendChild(t);
+        });
+      } else if (vidFiles.length > 0) {
+        vidFiles.forEach((vid, i) => {
+          const t = document.createElement('div');
+          t.className = 'preview-thumb' + (i === 0 ? ' active' : '');
+          t.style.background = '#000';
+          t.innerHTML = '<video src="'+vid.path+'" muted preload="metadata" style="width:100%;height:100%;object-fit:contain;"></video>';
+          t.onclick = function() {
+            document.querySelectorAll('.preview-thumb').forEach(x => x.classList.remove('active'));
+            t.classList.add('active');
+            previewEl.innerHTML = '<video src="'+vid.path+'" controls playsinline preload="metadata" style="max-width:100%;max-height:60vh;object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
+            previewEl.style.background = '#000';
           };
           thumbs.appendChild(t);
         });
