@@ -241,22 +241,30 @@ router.post('/payment/create', authMiddleware, async (req, res) => {
     ).run(req.userId, orderNo, amount, 'pending');
 
     // 初始化支付宝SDK
+    const privateKey = process.env.ALIPAY_PRIVATE_KEY.startsWith('-----')
+      ? process.env.ALIPAY_PRIVATE_KEY
+      : `-----BEGIN RSA PRIVATE KEY-----\n${process.env.ALIPAY_PRIVATE_KEY}\n-----END RSA PRIVATE KEY-----`;
+    const publicKey = process.env.ALIPAY_PUBLIC_KEY.startsWith('-----')
+      ? process.env.ALIPAY_PUBLIC_KEY
+      : `-----BEGIN PUBLIC KEY-----\n${process.env.ALIPAY_PUBLIC_KEY}\n-----END PUBLIC KEY-----`;
+
     const alipaySdk = new AlipaySdk({
       appId: process.env.ALIPAY_APP_ID,
-      privateKey: process.env.ALIPAY_PRIVATE_KEY,
-      alipayPublicKey: process.env.ALIPAY_PUBLIC_KEY
+      privateKey: privateKey,
+      alipayPublicKey: publicKey,
+      signType: 'RSA2'
     });
 
     const formData = new AlipayFormData();
     formData.setMethod('get');
     formData.addField('notifyUrl', 'https://lizisucaiwang.online/api/ai/payment/notify');
     formData.addField('returnUrl', 'https://lizisucaiwang.online/ai-image.html?payment=success');
-    formData.addField('bizContent', JSON.stringify({
+    formData.addField('bizContent', {
       outTradeNo: orderNo,
       totalAmount: amount.toFixed(2),
       subject: `栗子AI生图充值 ${amount}元`,
       productCode: 'FAST_INSTANT_TRADE_PAY'
-    }));
+    });
 
     const result = await alipaySdk.pageExec('alipay.trade.page.pay', formData);
 
