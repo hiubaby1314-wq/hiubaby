@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { router: aiRouter, initTables: initAITables } = require('./ai-system');
+const cors = require('cors');
 
 // Traditional → Simplified Chinese converter
 const OpenCC = require('opencc-js');
@@ -287,6 +288,13 @@ function getSiteURL(req) {
   if (req) return `${req.protocol}://${req.get('host')}`;
   return 'https://lizisucaiwang.online';
 }
+
+
+// === CORS ===
+app.use(cors({
+  origin: ['https://herng9d2.mule.page', 'https://lizisucaiwang.online'],
+  credentials: true
+}));
 
 // === Middleware ===
 app.use((req, res, next) => {
