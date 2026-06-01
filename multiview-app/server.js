@@ -5,8 +5,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // MuleRouter API configuration
-const API_KEY = process.env.MULEROUTER_API_KEY || process.env.API_KEY || 'muk-s-8de61603713303c497cea54004ca22eb';
-const BASE_URL = process.env.MULEROUTER_BASE_URL || process.env.BASE_URL || 'https://api.mulerun.com';
+const API_KEY = process.env.MULEROUTER_API_KEY || process.env.API_KEY || 'sk-mr-6a50a43d124fef8b7bac6d3fcf5cdeec8e32ea94249b22e78b05637b853a87a9';
+const BASE_URL = process.env.MULEROUTER_BASE_URL || process.env.BASE_URL || 'https://api.mulerouter.ai';
 const API_PATH = '/vendors/google/v1/nano-banana/edit';
 
 // In-memory task store (ephemeral runtime, tasks persist within a single instance)
