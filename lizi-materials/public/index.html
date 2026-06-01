@@ -2271,8 +2271,9 @@
 
     // === App Popup ===
     function openAppPopup(url, title) {
-      // 检查是否是 AI 生图功能（维护中）
-      if (url.includes('ai-image.html')) {
+      // 检查是否是 AI 生图功能（维护中，管理员不受影响）
+      const _isAdmin = currentUser && currentUser.role === 'admin';
+      if (url.includes('ai-image.html') && !_isAdmin) {
         showToast('🔧 AI生图功能维护中，请稍后再试');
         return;
       }
