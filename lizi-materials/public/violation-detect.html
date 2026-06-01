@@ -506,9 +506,10 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
                 <span id="recStatusText">点击"开始识别"自动提取视频语音转文字</span>
               </div>
               <div style="font-size:.72rem;color:var(--text2);margin-bottom:.5rem;padding:.5rem;background:var(--surface2);border-radius:6px;line-height:1.6">
-                <strong style="color:var(--accent)">使用说明：</strong>语音识别通过麦克风拾取视频声音，请确保：<br>
+                <strong style="color:var(--accent)">使用说明：</strong>语音识别通过<strong>麦克风</strong>拾取视频声音，请确保：<br>
                 ① 使用 <strong>Chrome/Edge</strong> 浏览器 &nbsp; ② 已允许<strong>麦克风权限</strong> &nbsp; ③ 通过 <strong>HTTPS</strong> 访问<br>
-                ④ 调高视频音量，环境尽量安静 &nbsp; ⑤ 如识别失败，建议切换到「手动输入」或上传「SRT字幕文件」
+                ④ <strong style="color:var(--danger)">不要戴耳机！</strong>视频声音需从扬声器外放，麦克风才能拾取 &nbsp; ⑤ 调高电脑音量，环境尽量安静<br>
+                ⑥ 如识别失败，建议切换到「手动输入」或上传「SRT字幕文件」
               </div>
               <div class="actions" style="margin-bottom:.8rem">
                 <button class="btn btn-primary" id="startRecBtn" onclick="startSpeechRecognition()">
@@ -2553,6 +2554,11 @@ let videoAnalysisResults = [];
 const uploadZone = document.getElementById('videoUploadZone');
 const fileInput = document.getElementById('videoFileInput');
 
+uploadZone.addEventListener('click', (e) => {
+  if (e.target === fileInput) return; // avoid double-triggering
+  fileInput.click();
+});
+
 uploadZone.addEventListener('dragover', (e) => {
   e.preventDefault();
   uploadZone.classList.add('dragover');
@@ -3036,6 +3042,19 @@ function startSpeechRecognition() {
   video.currentTime = 0;
   video.muted = false;
   video.volume = 1;
+  // IMPORTANT: Speech recognition uses microphone, so audio must play through speakers (NOT headphones)
+  // Route audio to speakers for better mic pickup
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaElementSource(video);
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = 2; // Boost volume for mic pickup
+    source.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+  } catch(e) {
+    // Already connected or not supported
+    console.log('Audio routing:', e.message);
+  }
   const playPromise = video.play();
   if (playPromise) {
     playPromise.catch(err => {
