@@ -69,13 +69,8 @@ app.post('/api/generate', async (req, res) => {
 
     const aspectRatio = SIZE_TO_ASPECT[size] || '1:1';
 
-    // Clean up base64 images (remove data URL prefix if present)
-    const cleanImages = images.map(img => {
-      if (img.startsWith('data:')) {
-        return img.split(',')[1] || img;
-      }
-      return img;
-    });
+    // Pass images as-is — API accepts full data URIs or HTTP URLs
+    const cleanImages = images;
 
     // Call MuleRouter API to create task
     const apiUrl = `${BASE_URL}${API_PATH}`;
