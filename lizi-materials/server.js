@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { router: aiRouter, initTables: initAITables } = require('./ai-system');
 
 // Traditional → Simplified Chinese converter
 const OpenCC = require('opencc-js');
@@ -1464,6 +1465,13 @@ async function setupDBSync() {
 async function main() {
   await initR2();
   await setupDBSync();
+  
+  // Initialize AI system
+  initAITables(db);
+  app.locals.db = db; // Make db accessible to AI system
+  app.use('/api/ai', aiRouter);
+  console.log('AI image generation system initialized');
+  
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`栗子素材网 running on http://0.0.0.0:${PORT} | R2: ${USE_R2 ? 'enabled' : 'disabled'}`);
   });
