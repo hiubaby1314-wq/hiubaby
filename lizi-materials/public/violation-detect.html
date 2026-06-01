@@ -506,10 +506,8 @@ textarea::placeholder { color: var(--text2); font-style: italic; }
                 <span id="recStatusText">点击"开始识别"自动提取视频语音转文字</span>
               </div>
               <div style="font-size:.72rem;color:var(--text2);margin-bottom:.5rem;padding:.5rem;background:var(--surface2);border-radius:6px;line-height:1.6">
-                <strong style="color:var(--accent)">使用说明：</strong>语音识别通过<strong>麦克风</strong>拾取视频声音，请确保：<br>
-                ① 使用 <strong>Chrome/Edge</strong> 浏览器 &nbsp; ② 已允许<strong>麦克风权限</strong> &nbsp; ③ 通过 <strong>HTTPS</strong> 访问<br>
-                ④ <strong style="color:var(--danger)">不要戴耳机！</strong>视频声音需从扬声器外放，麦克风才能拾取 &nbsp; ⑤ 调高电脑音量，环境尽量安静<br>
-                ⑥ 如识别失败，建议切换到「手动输入」或上传「SRT字幕文件」
+                <strong style="color:var(--accent)">自动识别：</strong>点击"开始识别"后，系统会自动提取视频音频并通过 AI 转写成文字字幕。<br>
+                视频将自动播放（可静音），播放结束后自动停止识别。识别精度取决于视频中的语音清晰度。
               </div>
               <div class="actions" style="margin-bottom:.8rem">
                 <button class="btn btn-primary" id="startRecBtn" onclick="startSpeechRecognition()">
@@ -2914,37 +2912,18 @@ function switchSubtitleSource(source) {
 }
 
 function startSpeechRecognition() {
-  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognitionAPI) {
-    showToast('当前浏览器不支持语音识别，请使用 Chrome/Edge 浏览器');
-    switchSubtitleSource('manual');
-    return;
-  }
-
   const video = document.getElementById('videoPlayer');
   if (!video.src || video.duration === 0) {
     showToast('请先上传视频');
     return;
   }
 
-  // Check HTTPS requirement
-  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-    showToast('语音识别需要 HTTPS 连接，当前连接不安全。请通过 HTTPS 访问。');
+  // Check if captureStream is supported
+  if (!video.captureStream && !video.mozCaptureStream) {
+    showToast('浏览器不支持音频提取，请使用 Chrome/Edge');
     switchSubtitleSource('manual');
     return;
   }
-
-  // Clean up previous recognition if any
-  if (speechRecognition) {
-    try { speechRecognition.stop(); } catch(e) {}
-    speechRecognition = null;
-  }
-
-  speechRecognition = new SpeechRecognitionAPI();
-  speechRecognition.lang = 'zh-CN';
-  speechRecognition.continuous = true;
-  speechRecognition.interimResults = true; // Show interim results for better UX
-  speechRecognition.maxAlternatives = 1;
 
   subtitleData = [];
   const timeline = document.getElementById('subtitleTimeline');
@@ -2953,127 +2932,104 @@ function startSpeechRecognition() {
   document.getElementById('startRecBtn').style.display = 'none';
   document.getElementById('stopRecBtn').style.display = 'inline-flex';
   document.getElementById('recognitionStatus').classList.add('listening');
-  document.getElementById('recStatusText').textContent = '正在初始化语音识别…';
+  document.getElementById('recStatusText').textContent = '正在从视频提取音频…';
 
-  let lastFinalTime = 0;
-  let restartCount = 0;
-  const MAX_RESTARTS = 20;
+  isListening = true;
 
-  speechRecognition.onstart = () => {
-    isListening = true;
-    document.getElementById('recStatusText').textContent = '正在识别语音…（请确保麦克风权限已开启，视频将自动播放）';
-  };
-
-  speechRecognition.onresult = (event) => {
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i];
-      if (result.isFinal) {
-        const text = result[0].transcript.trim();
-        if (text.length > 0) {
-          const time = Math.max(0, lastFinalTime);
-          lastFinalTime = video.currentTime;
-          subtitleData.push({ time, text, violations: [] });
-          addSubtitleToTimeline(subtitleData.length - 1, timeline);
-          document.getElementById('recStatusText').textContent = `识别中…已获取 ${subtitleData.length} 条字幕`;
-        }
-      }
-    }
-  };
-
-  speechRecognition.onerror = (event) => {
-    console.error('Speech recognition error:', event.error);
-    const errorMessages = {
-      'no-speech': '未检测到语音，请调高视频音量或靠近麦克风',
-      'audio-capture': '无法访问麦克风，请检查浏览器麦克风权限',
-      'not-allowed': '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问',
-      'network': '网络连接错误，语音识别需要联网',
-      'aborted': '语音识别被中断',
-      'service-not-allowed': '语音识别服务不可用，请检查浏览器设置',
-      'language-not-supported': '不支持中文语音识别，请尝试使用英文'
-    };
-    const msg = errorMessages[event.error] || `识别错误: ${event.error}`;
-    
-    // Don't stop on recoverable errors
-    if (['no-speech', 'aborted'].includes(event.error) && isListening && restartCount < MAX_RESTARTS) {
-      // Will auto-restart via onend
+  // Extract audio from video using MediaRecorder
+  try {
+    const stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      showToast('视频没有音频轨道');
+      stopSpeechRecognition();
       return;
     }
-    
-    document.getElementById('recStatusText').textContent = msg;
-    if (!['no-speech', 'aborted'].includes(event.error)) {
-      showToast(msg);
-    }
-  };
 
-  speechRecognition.onend = () => {
-    // Auto-restart if still listening and video is still playing
-    if (isListening && !video.ended && !video.paused && restartCount < MAX_RESTARTS) {
-      restartCount++;
+    const audioStream = new MediaStream(audioTracks);
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 
+                     MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    const recorder = new MediaRecorder(audioStream, { mimeType });
+    const chunks = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+
+    recorder.onstop = async () => {
+      document.getElementById('recStatusText').textContent = '正在识别语音（AI转写中）…';
+      const blob = new Blob(chunks, { type: mimeType });
+      
+      // Send to server for Whisper transcription
+      const formData = new FormData();
+      formData.append('audio', blob, 'audio.webm');
+
       try {
-        setTimeout(() => {
-          if (isListening) {
-            speechRecognition.start();
-          }
-        }, 100);
-      } catch(e) {
-        console.error('Failed to restart speech recognition:', e);
+        const resp = await fetch('/api/transcribe', { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        if (!data.ok) {
+          showToast('识别失败: ' + (data.error || '未知错误'));
+          stopSpeechRecognition();
+          return;
+        }
+
+        // Display segments
+        if (data.segments && data.segments.length > 0) {
+          data.segments.forEach(seg => {
+            subtitleData.push({ time: seg.time, text: seg.text, violations: [] });
+            addSubtitleToTimeline(subtitleData.length - 1, timeline);
+          });
+        } else if (data.text) {
+          // No segments, just full text - split by sentences
+          const sentences = data.text.split(/[。！？!?\n]+/).filter(s => s.trim());
+          const duration = video.duration;
+          const interval = duration / Math.max(sentences.length, 1);
+          sentences.forEach((text, i) => {
+            subtitleData.push({ time: i * interval, text: text.trim(), violations: [] });
+            addSubtitleToTimeline(subtitleData.length - 1, timeline);
+          });
+        }
+
         stopSpeechRecognition();
-        showToast('语音识别多次重启失败，请尝试手动输入字幕或使用SRT文件');
+        showToast(`识别完成，共 ${subtitleData.length} 条字幕`);
+      } catch (e) {
+        showToast('网络错误: ' + e.message);
+        stopSpeechRecognition();
       }
-    } else if (isListening && video.ended) {
-      stopSpeechRecognition();
+    };
+
+    // Start recording and play video
+    recorder.start();
+    video.currentTime = 0;
+    video.muted = false;
+    video.volume = 1;
+    
+    const playPromise = video.play();
+    if (playPromise) {
+      playPromise.catch(err => {
+        showToast('请点击视频播放按钮开始识别');
+        recorder.stop();
+      });
     }
-  };
 
-  // Start speech recognition
-  try {
-    speechRecognition.start();
-  } catch(e) {
-    console.error('Failed to start speech recognition:', e);
-    showToast('语音识别启动失败: ' + e.message);
-    document.getElementById('startRecBtn').style.display = 'inline-flex';
-    document.getElementById('stopRecBtn').style.display = 'none';
-    document.getElementById('recognitionStatus').classList.remove('listening');
-    document.getElementById('recStatusText').textContent = '启动失败，请手动输入字幕';
-    return;
-  }
+    // Stop recording when video ends
+    video.onended = () => {
+      if (recorder.state === 'recording') {
+        recorder.stop();
+      }
+    };
 
-  // Reset video to beginning and attempt play (user gesture context)
-  video.currentTime = 0;
-  video.muted = false;
-  video.volume = 1;
-  // IMPORTANT: Speech recognition uses microphone, so audio must play through speakers (NOT headphones)
-  // Route audio to speakers for better mic pickup
-  try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaElementSource(video);
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.value = 2; // Boost volume for mic pickup
-    source.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-  } catch(e) {
-    // Already connected or not supported
-    console.log('Audio routing:', e.message);
-  }
-  const playPromise = video.play();
-  if (playPromise) {
-    playPromise.catch(err => {
-      console.warn('Video autoplay blocked:', err);
-      document.getElementById('recStatusText').textContent = '语音识别已启动，请点击视频播放按钮开始';
-    });
-  }
+    document.getElementById('recStatusText').textContent = '正在提取音频（视频播放中）…';
 
-  video.onended = () => {
+  } catch (e) {
+    showToast('音频提取失败: ' + e.message);
     stopSpeechRecognition();
-  };
+  }
 }
 
 function stopSpeechRecognition() {
   isListening = false;
-  if (speechRecognition) {
-    try { speechRecognition.stop(); } catch(e) {}
-    speechRecognition = null;
-  }
   const video = document.getElementById('videoPlayer');
   video.pause();
   document.getElementById('startRecBtn').style.display = 'inline-flex';
@@ -3083,7 +3039,7 @@ function stopSpeechRecognition() {
   if (count > 0) {
     document.getElementById('recStatusText').textContent = `识别完成，共 ${count} 条字幕`;
   } else {
-    document.getElementById('recStatusText').textContent = '未识别到字幕内容。建议：调高视频音量后重试，或切换到「手动输入」/「SRT文件」模式';
+    document.getElementById('recStatusText').textContent = '未识别到字幕内容。建议：检查视频是否有音频，或切换到「手动输入」/「SRT文件」模式';
   }
 }
 

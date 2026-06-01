@@ -20,7 +20,7 @@ const R2_BUCKET = process.env.R2_BUCKET || '';
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
-const USE_R2 = !!(R2_BUCKET && R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+const USE_R2 = !!(R2_BUCKET && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
 const DB_KEY = 'lizi.db';
 const DB_PATH = path.join(__dirname, 'data', 'lizi.db');
 let db;
@@ -126,8 +126,8 @@ async function initR2() {
   const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
   s3Client = {
     client: new S3Client({
-      region: 'auto',
-      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      region: process.env.COS_REGION || 'auto',
+      endpoint: process.env.COS_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY }
     }),
     PutObjectCommand,
@@ -590,9 +590,9 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
   const hasImage = files.some(f => ['.png', '.gif', '.jpg', '.jpeg'].includes(path.extname(f.originalname).toLowerCase()));
   let warning = '';
   if (fileCount === 1) {
-    warning = hasFla ? '只上傳了 FLA 文件，缺少 PNG/GIF 圖片' : '只上傳了圖片文件，缺少 FLA 源文件';
+    warning = hasFla ? '只上传了 FLA 文件，缺少 PNG/GIF 图片' : '只上传了图片文件，缺少 FLA 源文件';
   } else if (fileCount >= 2 && (!hasFla || !hasImage)) {
-    warning = !hasFla ? '缺少 FLA 源文件' : '缺少 PNG/GIF 圖片文件';
+    warning = !hasFla ? '缺少 FLA 源文件' : '缺少 PNG/GIF 图片文件';
   }
   if (uploadErrors.length > 0) {
     warning += (warning ? '\n' : '') + '部分文件上传失败：' + uploadErrors.join('; ');
@@ -773,7 +773,7 @@ app.post('/api/download-all', async (req, res) => {
       
       for (const file of files) {
         try {
-          const r2Key = file.path.replace('https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev/', '');
+          const r2Key = file.path.replace(/^https?:\/\/[^/]+\//, '');
           const fileBuffer = await downloadFromR2(r2Key);
           
           if (fileBuffer) {
@@ -828,6 +828,7 @@ app.post('/api/download-category', async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     
     res.setHeader('Content-Disposition', 'attachment; filename=lizi-materials.zip');
+    archive.pipe(res);
     
     const materials = db.prepare('SELECT * FROM materials WHERE cat = ? ORDER BY id DESC').all(category);
     
@@ -836,7 +837,7 @@ app.post('/api/download-category', async (req, res) => {
       
       for (const file of files) {
         try {
-          const r2Key = file.path.replace('https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev/', '');
+          const r2Key = file.path.replace(/^https?:\/\/[^/]+\//, '');
           const fileBuffer = await downloadFromR2(r2Key);
           
           if (fileBuffer) {
@@ -1066,6 +1067,45 @@ app.post('/api/snapshot/restore', async (req, res) => {
     res.json({ ok: true, message: `已从快照恢复 ${count} 个素材`, materialCount: count, materials: getAllMaterials() });
   } catch (e) {
     res.json({ ok: false, error: '恢复快照失败: ' + e.message });
+  }
+});
+
+// === Audio Transcription (Whisper API) ===
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+  if (!req.file) return res.json({ ok: false, error: 'No audio file provided' });
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+    if (!apiKey) return res.json({ ok: false, error: 'API key not configured' });
+
+    // Send to Whisper API
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('file', req.file.buffer, { filename: 'audio.webm', contentType: req.file.mimetype });
+    form.append('model', 'whisper-1');
+    form.append('language', 'zh');
+    form.append('response_format', 'verbose_json');
+
+    const resp = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, ...form.getHeaders() },
+      body: form
+    });
+
+    const data = await resp.json();
+    if (data.error) return res.json({ ok: false, error: data.error.message || JSON.stringify(data.error) });
+
+    // Parse segments with timestamps
+    const segments = (data.segments || []).map(seg => ({
+      time: seg.start,
+      text: seg.text.trim()
+    })).filter(s => s.text);
+
+    res.json({ ok: true, text: data.text || '', segments });
+  } catch (e) {
+    console.error('[Transcribe] Error:', e.message);
+    res.json({ ok: false, error: e.message });
   }
 });
 
