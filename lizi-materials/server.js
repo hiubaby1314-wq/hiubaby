@@ -283,7 +283,7 @@ async function uploadToR2(key, buffer, contentType = 'application/octet-stream')
           console.log('COS upload error:', err.message);
           reject(err);
         } else {
-          resolve(data.Location || `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`);
+          const url = `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`; resolve(url);
         }
       });
     });
