@@ -11,11 +11,11 @@ const sharp = require('sharp');
  * @returns {Buffer} PNG buffer of the watermark overlay
  */
 function generateWatermarkSVG(width, height) {
-  const text = '栗子素材';
-  const fontSize = 28;
+  const text = '栗子素材网';
+  const fontSize = 64;
   const angle = -30;
-  const spacingX = 260;
-  const spacingY = 140;
+  const spacingX = 480;
+  const spacingY = 240;
 
   // Generate repeated watermark text positions covering the image
   // We need extra coverage because of rotation, so extend beyond bounds
@@ -28,7 +28,7 @@ function generateWatermarkSVG(width, height) {
   let textElements = '';
   for (let y = offsetY; y < offsetY + coverH; y += spacingY) {
     for (let x = offsetX; x < offsetX + coverW; x += spacingX) {
-      textElements += `<text x="${x}" y="${y}" font-size="${fontSize}" fill="rgba(128,128,128,0.03)" font-family="sans-serif" transform="rotate(${angle} ${x} ${y})">${text}</text>\n`;
+      textElements += `<text x="${x}" y="${y}" font-size="${fontSize}" fill="rgba(0,0,0,0.03)" font-family="'Noto Sans CJK SC Black', 'Noto Sans CJK SC', sans-serif" font-weight="900" transform="rotate(${angle} ${x} ${y})">${text}</text>\n`;
     }
   }
 
