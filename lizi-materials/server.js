@@ -6,6 +6,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { router: aiRouter, initTables: initAITables } = require('./ai-system');
 const cors = require('cors');
+const COS = require("cos-nodejs-sdk-v5");
 
 // Traditional → Simplified Chinese converter
 const OpenCC = require('opencc-js');
@@ -122,6 +123,7 @@ async function initDB() {
 
 // === R2 Storage ===
 let s3Client = null;
+let cosClient = null;
 
 async function initR2() {
   if (!USE_R2) { console.log('R2 not configured. Using local disk.'); return; }
@@ -130,13 +132,16 @@ async function initR2() {
     client: new S3Client({
       region: process.env.COS_REGION || 'auto',
       endpoint: process.env.COS_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY }
+      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+      forcePathStyle: true,
     }),
     PutObjectCommand,
     DeleteObjectCommand,
     GetObjectCommand
   };
   console.log('R2 storage configured.');
+  console.log("COS init - SecretId:", process.env.R2_ACCESS_KEY_ID ? "set" : "missing", "SecretKey:", process.env.R2_SECRET_ACCESS_KEY ? "set (" + process.env.R2_SECRET_ACCESS_KEY.length + " chars)" : "missing");
+  cosClient = new COS({ SecretId: process.env.R2_ACCESS_KEY_ID, SecretKey: process.env.R2_SECRET_ACCESS_KEY });
 }
 
 // === Snapshot: manual save/restore ===
@@ -234,34 +239,78 @@ async function restoreSnapshot() {
 }
 
 async function downloadFromR2(key) {
-  if (!s3Client) return null;
   try {
-    const res = await s3Client.client.send(new s3Client.GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
-    let buffer;
-    if (typeof res.Body.transformToByteArray === 'function') {
-      buffer = Buffer.from(await res.Body.transformToByteArray());
-    } else {
-      // Fallback for Node.js stream
-      const chunks = [];
-      for await (const chunk of res.Body) {
-        chunks.push(chunk);
-      }
-      buffer = Buffer.concat(chunks);
+    // Try COS SDK first for DB files
+    if (key === DB_KEY && cosClient) {
+      return await new Promise((resolve, reject) => {
+        cosClient.getObject({
+          Bucket: R2_BUCKET,
+          Region: process.env.COS_REGION || 'ap-hongkong',
+          Key: key
+        }, (err, data) => {
+          if (err) {
+            console.log('COS download error:', err.message);
+            resolve(null);
+          } else {
+            resolve(data.Body);
+          }
+        });
+      });
     }
-    return buffer;
-  } catch(e) {
-    if (e.name === 'NoSuchKey') return null;
-    console.error('R2 download error:', e.message);
+    
+    // Fallback to AWS SDK for other files
+    if (!s3Client) return null;
+    const command = new s3Client.GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key
+    });
+    const response = await s3Client.client.send(command);
+    const chunks = [];
+    for await (const chunk of response.Body) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch (e) {
+    console.log('R2 download error:', e.message);
     return null;
   }
 }
 
-async function uploadToR2(key, buffer, contentType) {
-  if (!s3Client) return key;
-  await s3Client.client.send(new s3Client.PutObjectCommand({
-    Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: contentType || 'application/octet-stream'
-  }));
-  return `${R2_PUBLIC_URL}/${key}`;
+async function uploadToR2(key, buffer, contentType = 'application/octet-stream') {
+  try {
+    // Try COS SDK first for DB files
+    if (key === DB_KEY && cosClient) {
+      return await new Promise((resolve, reject) => {
+        cosClient.putObject({
+          Bucket: R2_BUCKET,
+          Region: process.env.COS_REGION || 'ap-hongkong',
+          Key: key,
+          Body: buffer
+        }, (err, data) => {
+          if (err) {
+            console.log('COS upload error:', err.message);
+            reject(err);
+          } else {
+            resolve(data.Location || `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`);
+          }
+        });
+      });
+    }
+    
+    // Fallback to AWS SDK for other files
+    if (!s3Client) throw new Error('Storage not configured');
+    const command = new s3Client.PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType
+    });
+    await s3Client.client.send(command);
+    return `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`;
+  } catch (e) {
+    console.log('R2 upload error:', e.message);
+    throw e;
+  }
 }
 
 async function deleteFromR2(url) {
@@ -305,6 +354,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Cache headers for static assets
+// Cache headers for static assets
 app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), { maxAge: '7d', immutable: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '1d',
@@ -315,81 +365,11 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
-// === SEO: Server-side rendering for category pages ===
-const VALID_CATS = ['人物', '表情包', '画师寄售', '背景图', '道具栏', '特效', '限时优惠'];
-const CAT_DESCRIPTIONS = {
-  '人物': '人物立绘素材，包含FLA源文件，支持在线预览',
-  '表情包': '表情包素材下载，提供丰富的表情动画FLA源文件',
-  '画师寄售': '画师寄售素材，独家原创美术资源',
-  '背景图': '背景图素材，精美场景背景FLA源文件下载',
-  '道具栏': '道具栏素材，游戏道具图标FLA源文件',
-  '特效': '特效素材，动画特效FLA源文件',
-  '限时优惠': '限时优惠素材，特价优质美术资源'
-};
-
-app.get('/cat/:catName', (req, res) => {
-  const catName = decodeURIComponent(req.params.catName);
-  if (!VALID_CATS.includes(catName)) {
-    return res.redirect(301, '/');
-  }
-
-  const fs2 = require('fs');
-  const indexPath = path.join(__dirname, 'public', 'index.html');
-  let html = fs2.readFileSync(indexPath, 'utf-8');
-
-  const catDesc = CAT_DESCRIPTIONS[catName] || '专业美术素材下载平台';
-  const pageTitle = `${catName}素材 - 栗子素材网`;
-  const baseUrl = getSiteURL(req);
-  const canonicalUrl = `${baseUrl}/cat/${encodeURIComponent(catName)}`;
-
-  // Get sample material names for this category (for structured data)
-  let sampleMaterials = [];
-  try {
-    sampleMaterials = db.prepare('SELECT name FROM materials WHERE cat = ? ORDER BY sort_order, id DESC LIMIT 10').all(catName).map(m => m.name);
-  } catch(e) {}
-
-  // Replace title
-  html = html.replace(/<title>.*?<\/title>/, `<title>${pageTitle}</title>`);
-
-  // Replace canonical
-  html = html.replace(/<link rel="canonical" href=".*?"/, `<link rel="canonical" href="${canonicalUrl}"`);
-
-  // Replace OG tags
-  html = html.replace(/<meta property="og:title" content=".*?"/, `<meta property="og:title" content="${pageTitle}"`);
-  html = html.replace(/<meta property="og:url" content=".*?"/, `<meta property="og:url" content="${canonicalUrl}"`);
-  html = html.replace(/<meta property="og:description" content=".*?"/, `<meta property="og:description" content="${catDesc}"`);
-  html = html.replace(/<meta name="twitter:title" content=".*?"/, `<meta name="twitter:title" content="${pageTitle}"`);
-  html = html.replace(/<meta name="twitter:description" content=".*?"/, `<meta name="twitter:description" content="${catDesc}"`);
-
-  // Inject category-specific structured data with material names
-  const itemListJSON = JSON.stringify({
-    "@context": "https://schema.org",
-    "@type": "ItemList",
-    "name": `${catName}素材`,
-    "description": catDesc,
-    "url": canonicalUrl,
-    "numberOfItems": sampleMaterials.length,
-    "itemListElement": sampleMaterials.map((name, i) => ({
-      "@type": "ListItem",
-      "position": i + 1,
-      "name": name
-    }))
-  });
-
-  const itemListScript = `<script type="application/ld+json">${itemListJSON}</script>`;
-  html = html.replace('</head>', itemListScript + '\n</head>');
-
-  // Inject a hidden div with category content for crawlers
-  const crawlerContent = `<div style="display:none" aria-hidden="true">
-    <h2>${catName}素材列表</h2>
-    <p>${catDesc}</p>
-    <ul>${sampleMaterials.map(n => `<li>${n}</li>`).join('')}</ul>
-  </div>`;
-  html = html.replace('<main class="main-content">', crawlerContent + '\n  <main class="main-content">');
-
-  res.type('html');
-  res.send(html);
+// AI image page - clean URL
+app.get("/ai", function(req, res) {
+  res.sendFile(path.join(__dirname, "public", "ai-image.html"));
 });
+
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
@@ -462,14 +442,15 @@ app.post('/api/login', async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || user.password !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
 
-  // Skip device lock for mobile devices
-  if (!isMobile) {
+  // Device lock check (admin: enforce on ALL devices including mobile)
+  const isAdminLogin = user.role === 'admin';
+  if (!isMobile || isAdminLogin) {
     const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
     if (lock) {
       if (lock.device_id !== deviceId) {
-        return res.json({ ok: false, error: '该账号已在其他设备登录，无法在此设备使用' });
+        return res.json({ ok: false, error: isAdminLogin ? '管理员账号已锁定到指定设备，无法在此设备登录' : '该账号已在其他设备登录，无法在此设备使用' });
       }
-      if (lock.is_mobile !== (isMobile ? 1 : 0)) {
+      if (!isAdminLogin && lock.is_mobile !== (isMobile ? 1 : 0)) {
         db.prepare('UPDATE device_lock SET is_mobile = ? WHERE username = ?').run(isMobile ? 1 : 0, username);
         await syncDB();
       }
@@ -1298,13 +1279,18 @@ app.use((err, req, res, next) => {
 async function setupDBSync() {
   if (USE_R2) {
     console.log('Checking for DB in R2...');
-    const dbBuffer = await downloadFromR2(DB_KEY);
-    if (dbBuffer) {
-      fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-      fs.writeFileSync(DB_PATH, dbBuffer);
-      console.log('DB restored from R2 (' + dbBuffer.length + ' bytes)');
+    // Only restore from R2 if local DB doesn't exist
+    if (!fs.existsSync(DB_PATH)) {
+      const dbBuffer = await downloadFromR2(DB_KEY);
+      if (dbBuffer) {
+        fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+        fs.writeFileSync(DB_PATH, dbBuffer);
+        console.log('DB restored from R2 (' + dbBuffer.length + ' bytes)');
+      } else {
+        console.log('No DB found in R2, will create new');
+      }
     } else {
-      console.log('No DB found in R2, will create new');
+      console.log('Local DB exists, skipping R2 restore');
     }
   }
   await initDB();
