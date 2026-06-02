@@ -110,6 +110,16 @@
     // Check AI maintenance status on page load
     checkAiMaintenance();
 
+    // ===== USER MANAGER POPUP =====
+    function openUserManager() {
+      document.getElementById('userManagerModal').classList.add('active');
+      renderAdminUsers();
+    }
+    function closeUserManager() {
+      document.getElementById('userManagerModal').classList.remove('active');
+    }
+
+
 
 
     // ===== UTILITY FUNCTIONS =====
@@ -566,7 +576,7 @@
       document.getElementById('adminPanel').style.display = isAdmin ? 'block' : 'none';
       document.getElementById('adminToolbar').style.display = isAdmin ? 'flex' : 'none';
       document.getElementById('bindBar').style.display = currentUser ? 'flex' : 'none';
-      if (isAdmin) renderAdminUsers();
+      // user list rendered on-demand in openUserManager()
     }
 
     function updateUserBar() {
