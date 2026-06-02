@@ -368,6 +368,11 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
+// Category pages - serve index.html for client-side routing
+app.get("/cat/:name", function(req, res) {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
 // AI image page - only accessible via iframe inside main site
 // Direct /ai URL access is disabled, redirects to homepage
 app.get("/ai", function(req, res) {
