@@ -168,11 +168,16 @@ async function saveSnapshot() {
     fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), 'utf-8');
 
     // Sync snapshot to R2
-    if (USE_R2 && s3Client) {
+    if (USE_R2 && cosClient) {
       const buffer = fs.readFileSync(SNAPSHOT_PATH);
-      await s3Client.client.send(new s3Client.PutObjectCommand({
-        Bucket: R2_BUCKET, Key: 'materials-snapshot.json', Body: buffer, ContentType: 'application/json'
-      }));
+      await new Promise((resolve, reject) => {
+        cosClient.putObject({
+          Bucket: R2_BUCKET,
+          Region: process.env.COS_REGION || 'ap-hongkong',
+          Key: 'materials-snapshot.json',
+          Body: buffer
+        }, (err) => { if (err) reject(err); else resolve(); });
+      });
     }
     console.log(`Snapshot saved: ${snapshot.length} materials`);
     return snapshot.length;
@@ -240,36 +245,22 @@ async function restoreSnapshot() {
 
 async function downloadFromR2(key) {
   try {
-    // Try COS SDK first for DB files
-    if (key === DB_KEY && cosClient) {
-      return await new Promise((resolve, reject) => {
-        cosClient.getObject({
-          Bucket: R2_BUCKET,
-          Region: process.env.COS_REGION || 'ap-hongkong',
-          Key: key
-        }, (err, data) => {
-          if (err) {
-            console.log('COS download error:', err.message);
-            resolve(null);
-          } else {
-            resolve(data.Body);
-          }
-        });
+    // Use COS SDK for all downloads
+    if (!cosClient) return null;
+    return await new Promise((resolve, reject) => {
+      cosClient.getObject({
+        Bucket: R2_BUCKET,
+        Region: process.env.COS_REGION || 'ap-hongkong',
+        Key: key
+      }, (err, data) => {
+        if (err) {
+          console.log('COS download error:', err.message);
+          resolve(null);
+        } else {
+          resolve(data.Body);
+        }
       });
-    }
-    
-    // Fallback to AWS SDK for other files
-    if (!s3Client) return null;
-    const command = new s3Client.GetObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key
     });
-    const response = await s3Client.client.send(command);
-    const chunks = [];
-    for await (const chunk of response.Body) {
-      chunks.push(chunk);
-    }
-    return Buffer.concat(chunks);
   } catch (e) {
     console.log('R2 download error:', e.message);
     return null;
@@ -278,35 +269,24 @@ async function downloadFromR2(key) {
 
 async function uploadToR2(key, buffer, contentType = 'application/octet-stream') {
   try {
-    // Try COS SDK first for DB files
-    if (key === DB_KEY && cosClient) {
-      return await new Promise((resolve, reject) => {
-        cosClient.putObject({
-          Bucket: R2_BUCKET,
-          Region: process.env.COS_REGION || 'ap-hongkong',
-          Key: key,
-          Body: buffer
-        }, (err, data) => {
-          if (err) {
-            console.log('COS upload error:', err.message);
-            reject(err);
-          } else {
-            resolve(data.Location || `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`);
-          }
-        });
+    // Use COS SDK for all uploads
+    if (!cosClient) throw new Error('COS client not configured');
+    return await new Promise((resolve, reject) => {
+      cosClient.putObject({
+        Bucket: R2_BUCKET,
+        Region: process.env.COS_REGION || 'ap-hongkong',
+        Key: key,
+        Body: buffer,
+        ContentType: contentType
+      }, (err, data) => {
+        if (err) {
+          console.log('COS upload error:', err.message);
+          reject(err);
+        } else {
+          resolve(data.Location || `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`);
+        }
       });
-    }
-    
-    // Fallback to AWS SDK for other files
-    if (!s3Client) throw new Error('Storage not configured');
-    const command = new s3Client.PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType
     });
-    await s3Client.client.send(command);
-    return `https://${R2_BUCKET}.cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com/${key}`;
   } catch (e) {
     console.log('R2 upload error:', e.message);
     throw e;
@@ -314,7 +294,7 @@ async function uploadToR2(key, buffer, contentType = 'application/octet-stream')
 }
 
 async function deleteFromR2(url) {
-  if (!s3Client) return;
+  if (!cosClient) return;
   let key = url;
   if (url.startsWith('http')) {
     const prefix = R2_PUBLIC_URL + '/';
@@ -325,7 +305,16 @@ async function deleteFromR2(url) {
     key = url.slice(prefix.length);
   }
   try {
-    await s3Client.client.send(new s3Client.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    await new Promise((resolve, reject) => {
+      cosClient.deleteObject({
+        Bucket: R2_BUCKET,
+        Region: process.env.COS_REGION || 'ap-hongkong',
+        Key: key
+      }, (err, data) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   } catch(e) {
     console.error('R2 delete error:', e.message, 'key:', key);
   }
@@ -390,16 +379,28 @@ function rewriteR2Url(url) {
 async function syncDB() {
   if (!USE_R2) return;
   try {
-    if (!s3Client || !db) {
-      console.error('DB sync: s3Client or db not initialized');
+    if (!cosClient || !db) {
+      console.error('DB sync: cosClient or db not initialized');
       return;
     }
     db.pragma('wal_checkpoint(TRUNCATE)');
     const buffer = fs.readFileSync(DB_PATH);
-    await s3Client.client.send(new s3Client.PutObjectCommand({
-      Bucket: R2_BUCKET, Key: DB_KEY, Body: buffer, ContentType: 'application/octet-stream'
-    }));
-    console.log('DB synced to R2 (' + buffer.length + ' bytes)');
+    await new Promise((resolve, reject) => {
+      cosClient.putObject({
+        Bucket: R2_BUCKET,
+        Region: process.env.COS_REGION || 'ap-hongkong',
+        Key: DB_KEY,
+        Body: buffer
+      }, (err, data) => {
+        if (err) {
+          console.error('DB sync failed:', err.message);
+          reject(err);
+        } else {
+          console.log('DB synced to R2 (' + buffer.length + ' bytes)');
+          resolve();
+        }
+      });
+    });
   } catch(e) {
     console.error('DB sync failed:', e.message);
   }
@@ -953,7 +954,7 @@ app.post('/api/revert-stable', async (req, res) => {
   const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
   if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
   
-  if (!USE_R2 || !s3Client) {
+  if (!USE_R2 || !cosClient) {
     return res.json({ ok: false, error: 'R2 未配置，无法恢复' });
   }
   
@@ -1205,7 +1206,7 @@ app.get('/api/debug/r2-test', async (req, res) => {
     s3ClientInitialized: !!s3Client,
   };
   
-  if (!USE_R2 || !s3Client) {
+  if (!USE_R2 || !cosClient) {
     results.error = 'R2 not configured';
     return res.json(results);
   }
@@ -1346,12 +1347,24 @@ async function setupDBSync() {
           const newKey = `files/${hash}${f.ext}`;
 
           // Upload to new key
-          await s3Client.client.send(new s3Client.PutObjectCommand({
-            Bucket: R2_BUCKET, Key: newKey, Body: fileBuffer, ContentType: f.mime || 'application/octet-stream'
-          }));
+          await new Promise((resolve, reject) => {
+            cosClient.putObject({
+              Bucket: R2_BUCKET,
+              Region: process.env.COS_REGION || 'ap-hongkong',
+              Key: newKey,
+              Body: fileBuffer,
+              ContentType: f.mime || 'application/octet-stream'
+            }, (err) => { if (err) reject(err); else resolve(); });
+          });
 
           // Delete old key
-          await s3Client.client.send(new s3Client.DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+          await new Promise((resolve, reject) => {
+            cosClient.deleteObject({
+              Bucket: R2_BUCKET,
+              Region: process.env.COS_REGION || 'ap-hongkong',
+              Key: key
+            }, (err) => { if (err) reject(err); else resolve(); });
+          });
 
           // Update database
           const newUrl = `${R2_PUBLIC_URL}/${newKey}`;
@@ -1406,16 +1419,21 @@ async function setupDBSync() {
       
       if (orphanedMaterials.length > 0) {
         console.log(`Migration: Found ${orphanedMaterials.length} orphaned materials, attempting to recover files from R2...`);
-        const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-        const r2Files = await s3Client.client.send(new ListObjectsV2Command({
-          Bucket: R2_BUCKET,
-          Prefix: 'uploads/',
-          MaxKeys: 1000
-        }));
+        const r2Files = await new Promise((resolve, reject) => {
+          cosClient.getBucket({
+            Bucket: R2_BUCKET,
+            Region: process.env.COS_REGION || 'ap-hongkong',
+            Prefix: 'uploads/',
+            MaxKeys: 1000
+          }, (err, data) => {
+            if (err) reject(err);
+            else resolve(data);
+          });
+        });
         
         const r2FileMap = {};
         for (const obj of (r2Files.Contents || [])) {
-          r2FileMap[obj.Key] = { size: obj.Size, modified: obj.LastModified };
+          r2FileMap[obj.Key] = { size: obj.Size, modified: new Date(obj.LastModified) };
         }
         
         for (const mat of orphanedMaterials) {
