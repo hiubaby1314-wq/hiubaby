@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { router: aiRouter, initTables: initAITables } = require('./ai-system');
 const cors = require('cors');
 const COS = require("cos-nodejs-sdk-v5");
+const { applyWatermark } = require('./watermark');
 
 // Traditional → Simplified Chinese converter
 const OpenCC = require('opencc-js');
@@ -575,7 +576,17 @@ app.post('/api/materials', upload.array('files', 20), async (req, res) => {
     try {
       const ext = path.extname(f.originalname);
       const key = `uploads/${crypto.randomUUID()}${ext}`;
-      const url = await uploadToR2(key, f.buffer, f.mimetype);
+      // Apply watermark to image files
+      let fileBuffer = f.buffer;
+      if (f.mimetype && f.mimetype.startsWith('image/') && !['.gif', '.svg', '.fla', '.swf'].includes(ext.toLowerCase())) {
+        try {
+          fileBuffer = await applyWatermark(f.buffer, f.mimetype);
+          console.log(`  Watermark applied: ${f.originalname} (${f.buffer.length} -> ${fileBuffer.length} bytes)`);
+        } catch (wmErr) {
+          console.error(`  Watermark failed for ${f.originalname}: ${wmErr.message}`);
+        }
+      }
+      const url = await uploadToR2(key, fileBuffer, f.mimetype);
       db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
         .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
       uploadedCount++;
@@ -625,7 +636,17 @@ app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res
   for (const f of files) {
     const ext = path.extname(f.originalname);
     const key = `uploads/${crypto.randomUUID()}${ext}`;
-    const url = await uploadToR2(key, f.buffer, f.mimetype);
+    // Apply watermark to image files
+    let fileBuffer = f.buffer;
+    if (f.mimetype && f.mimetype.startsWith('image/') && !['.gif', '.svg', '.fla', '.swf'].includes(ext.toLowerCase())) {
+      try {
+        fileBuffer = await applyWatermark(f.buffer, f.mimetype);
+        console.log(`  Watermark applied: ${f.originalname} (${f.buffer.length} -> ${fileBuffer.length} bytes)`);
+      } catch (wmErr) {
+        console.error(`  Watermark failed for ${f.originalname}: ${wmErr.message}`);
+      }
+    }
+    const url = await uploadToR2(key, fileBuffer, f.mimetype);
     db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
       .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
