@@ -31,10 +31,9 @@ let dbReady = true; // false during db close/reopen windows
 
 // === Database ===
 async function initDB() {
-  const ensureLoaded = require('./lib/sqlite-compat');
-  const SQL = await ensureLoaded();
+  const CompatDB = require('./lib/sqlite-compat');
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  db = new ensureLoaded.Database(SQL, DB_PATH);
+  db = new CompatDB(null, DB_PATH);
   db.pragma('journal_mode = WAL');
 
   // Materials table
@@ -1003,9 +1002,8 @@ app.post('/api/revert-stable', async (req, res) => {
     console.log('DB file restored from backup (' + backupBuffer.length + ' bytes)');
     
     // Re-init DB
-    const ensureLoaded = require('./lib/sqlite-compat');
-    const SQL = await ensureLoaded();
-    db = new ensureLoaded.Database(SQL, DB_PATH);
+    const CompatDB = require('./lib/sqlite-compat');
+    db = new CompatDB(null, DB_PATH);
     db.pragma('journal_mode = WAL');
     
     // === 恢复当前帐号资料（不影响密码） ===
@@ -1410,9 +1408,8 @@ async function setupDBSync() {
       // Restore from backup
       fs.writeFileSync(DB_PATH, backupBuffer);
       // Reopen database
-      const ensureLoaded = require('./lib/sqlite-compat');
-      const SQL = await ensureLoaded();
-      db = new ensureLoaded.Database(SQL, DB_PATH);
+      const CompatDB = require('./lib/sqlite-compat');
+      db = new CompatDB(null, DB_PATH);
       db.pragma('journal_mode = WAL');
       
       // Re-run migrations on restored database
