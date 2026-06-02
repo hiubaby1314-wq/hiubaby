@@ -1878,6 +1878,7 @@
               <button onclick="closeAppPopup()" title="關閉">✕</button>
             </div>
             <iframe id="appPopupIframe" allow="clipboard-write; microphone"></iframe>
+            <div id="watermarkCover" style="display:none;position:absolute;bottom:0;right:0;width:220px;height:36px;z-index:99999;pointer-events:none;background:#fff;border-radius:8px 0 0 0;"></div>
           </div>
         `;
         document.body.appendChild(overlay);
@@ -1885,6 +1886,8 @@
       document.getElementById('appPopupTitle').textContent = title;
       if (_isAdmin && url.includes('/ai-image') && !url.includes('?')) { url = url + '?admin=1'; }
       document.getElementById('appPopupIframe').src = url;
+      const wmCover = document.getElementById('watermarkCover');
+      if (wmCover) wmCover.style.display = 'none';
       overlay.classList.add('show');
       document.body.style.overflow = 'hidden';
     }
@@ -1894,6 +1897,8 @@
       if (overlay) {
         overlay.classList.remove('show');
         document.getElementById('appPopupIframe').src = 'about:blank';
+        const wmCover2 = document.getElementById('watermarkCover');
+        if (wmCover2) wmCover2.style.display = 'none';
         document.body.style.overflow = '';
       }
     }
