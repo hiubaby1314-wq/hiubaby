@@ -286,6 +286,16 @@
         <h4 style="font-size:14px;margin-bottom:8px">🔧 系统维护</h4>
         <button class="admin-add-btn" id="revertStableBtn" style="background:#dc2626" onclick="revertToStable()">⚠️ 恢复到稳定版本</button>
         <div class="admin-msg" id="revertMsg"></div>
+
+        <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:13px;color:#374151">🌐 栗子AI生图：</span>
+          <label style="position:relative;display:inline-block;width:48px;height:26px;cursor:pointer">
+            <input type="checkbox" id="aiMaintenanceToggle" onchange="toggleAiMaintenance(this)" style="opacity:0;width:0;height:0">
+            <span id="aiToggleSlider" style="position:absolute;inset:0;background:#ef4444;border-radius:26px;transition:0.3s"></span>
+            <span id="aiToggleKnob" style="position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:0.3s"></span>
+          </label>
+          <span id="aiMaintenanceStatus" style="font-size:13px;font-weight:600;color:#ef4444">维护中</span>
+        </div>
       </div>
     </div>
 
@@ -295,7 +305,7 @@
         <span class="user-role" id="userRoleBadge"></span>
       </div>
       <div class="user-actions">
-        <button class="user-action-btn desktop-only" onclick="openAppPopup('/ai-image.html', '栗子AI生图')">🌐 栗子AI生图</button>
+        <button class="user-action-btn desktop-only" onclick="handleAiClick()">🌐 栗子AI生图</button>
         <button class="user-action-btn desktop-only" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')">🎙️ 栗子配音</button>
         <button class="user-action-btn desktop-only" onclick="openAppPopup('/violation-detect.html', '短劇違規詞檢測')">🔍 短劇違規詞檢測</button>
         <button class="user-action-btn desktop-only" onclick="openAppPopup('https://tjb6fgms.mule.page/', '图片多视角')">📷 图片多视角</button>
@@ -309,7 +319,7 @@
     <div class="login-prompt" id="loginPrompt">
       <span>👋 欢迎使用栗子素材网，请先登录</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="login-prompt-btn desktop-only" onclick="openAppPopup('/ai-image.html', '栗子AI生图')" style="background:#6366f1">🌐 栗子AI生图</button>
+        <button class="login-prompt-btn desktop-only" onclick="handleAiClick()" style="background:#6366f1">🌐 栗子AI生图</button>
         <button class="login-prompt-btn desktop-only" onclick="openAppPopup('https://sp22syun.mule.page/', '栗子配音')" style="background:#10b981">🎙️ 栗子配音</button>
         <button class="login-prompt-btn desktop-only" onclick="openAppPopup('/violation-detect.html', '短劇違規詞檢測')" style="background:#8b5cf6">🔍 短劇違規詞檢測</button>
         <button class="login-prompt-btn" onclick="openRequestModal()" style="background:#f59e0b">📩 素材需求</button>
@@ -605,6 +615,199 @@
         currentUser = JSON.parse(saved);
       }
     } catch(e) {}
+
+    // ===== AI MAINTENANCE CONTROL =====
+    let aiMaintenanceMode = false;
+
+    async function checkAiMaintenance() {
+      try {
+        const r = await fetch("/api/settings/ai-maintenance");
+        const d = await r.json();
+        aiMaintenanceMode = d.maintenance;
+        updateAiToggleUI();
+      } catch(e) { console.error("Check AI maintenance failed:", e); }
+    }
+
+    function updateAiToggleUI() {
+      const toggle = document.getElementById("aiMaintenanceToggle");
+      const slider = document.getElementById("aiToggleSlider");
+      const knob = document.getElementById("aiToggleKnob");
+      const status = document.getElementById("aiMaintenanceStatus");
+      if (!toggle) return;
+      toggle.checked = !aiMaintenanceMode;
+      if (aiMaintenanceMode) {
+        slider.style.background = "#ef4444";
+        knob.style.left = "3px";
+        status.textContent = "维护中";
+        status.style.color = "#ef4444";
+      } else {
+        slider.style.background = "#10b981";
+        knob.style.left = "25px";
+        status.textContent = "已开放";
+        status.style.color = "#10b981";
+      }
+    }
+
+    async function toggleAiMaintenance(checkbox) {
+      const enabled = !checkbox.checked;
+      try {
+        const r = await fetch("/api/settings/ai-maintenance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: currentUser.username, enabled })
+        });
+        const d = await r.json();
+        if (d.success) {
+          aiMaintenanceMode = d.maintenance;
+          updateAiToggleUI();
+        } else {
+          alert(d.error || "设置失败");
+          checkbox.checked = !checkbox.checked;
+        }
+      } catch(e) {
+        alert("网络错误");
+        checkbox.checked = !checkbox.checked;
+      }
+    }
+
+    function handleAiClick() {
+      if (aiMaintenanceMode) {
+        alert("🔧 栗子AI生图系统维护中，请稍后再试！");
+        return;
+      }
+      window.open("/ai", "_blank");
+    }
+
+    // Check AI maintenance status on page load
+    checkAiMaintenance();
+
+    // ===== AI MAINTENANCE CONTROL =====
+    let aiMaintenanceMode = false;
+
+    async function checkAiMaintenance() {
+      try {
+        const r = await fetch("/api/settings/ai-maintenance");
+        const d = await r.json();
+        aiMaintenanceMode = d.maintenance;
+        updateAiToggleUI();
+      } catch(e) { console.error("Check AI maintenance failed:", e); }
+    }
+
+    function updateAiToggleUI() {
+      const toggle = document.getElementById("aiMaintenanceToggle");
+      const slider = document.getElementById("aiToggleSlider");
+      const knob = document.getElementById("aiToggleKnob");
+      const status = document.getElementById("aiMaintenanceStatus");
+      if (!toggle) return;
+      toggle.checked = !aiMaintenanceMode;
+      if (aiMaintenanceMode) {
+        slider.style.background = "#ef4444";
+        knob.style.left = "3px";
+        status.textContent = "维护中";
+        status.style.color = "#ef4444";
+      } else {
+        slider.style.background = "#10b981";
+        knob.style.left = "25px";
+        status.textContent = "已开放";
+        status.style.color = "#10b981";
+      }
+    }
+
+    async function toggleAiMaintenance(checkbox) {
+      const enabled = !checkbox.checked;
+      try {
+        const r = await fetch("/api/settings/ai-maintenance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: currentUser.username, enabled })
+        });
+        const d = await r.json();
+        if (d.success) {
+          aiMaintenanceMode = d.maintenance;
+          updateAiToggleUI();
+        } else {
+          alert(d.error || "设置失败");
+          checkbox.checked = !checkbox.checked;
+        }
+      } catch(e) {
+        alert("网络错误");
+        checkbox.checked = !checkbox.checked;
+      }
+    }
+
+    function handleAiClick() {
+      if (aiMaintenanceMode) {
+        alert("🔧 栗子AI生图系统维护中，请稍后再试！");
+        return;
+      }
+      window.open("/ai", "_blank");
+    }
+
+    checkAiMaintenance();
+
+    // ===== AI MAINTENANCE CONTROL =====
+    let aiMaintenanceMode = false;
+
+    async function checkAiMaintenance() {
+      try {
+        const r = await fetch("/api/settings/ai-maintenance");
+        const d = await r.json();
+        aiMaintenanceMode = d.maintenance;
+        updateAiToggleUI();
+      } catch(e) { console.error("Check AI maintenance failed:", e); }
+    }
+
+    function updateAiToggleUI() {
+      const toggle = document.getElementById("aiMaintenanceToggle");
+      const slider = document.getElementById("aiToggleSlider");
+      const knob = document.getElementById("aiToggleKnob");
+      const status = document.getElementById("aiMaintenanceStatus");
+      if (!toggle) return;
+      toggle.checked = !aiMaintenanceMode;
+      if (aiMaintenanceMode) {
+        slider.style.background = "#ef4444";
+        knob.style.left = "3px";
+        status.textContent = "维护中";
+        status.style.color = "#ef4444";
+      } else {
+        slider.style.background = "#10b981";
+        knob.style.left = "25px";
+        status.textContent = "已开放";
+        status.style.color = "#10b981";
+      }
+    }
+
+    async function toggleAiMaintenance(checkbox) {
+      const enabled = !checkbox.checked;
+      try {
+        const r = await fetch("/api/settings/ai-maintenance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: currentUser.username, enabled })
+        });
+        const d = await r.json();
+        if (d.success) {
+          aiMaintenanceMode = d.maintenance;
+          updateAiToggleUI();
+        } else {
+          alert(d.error || "设置失败");
+          checkbox.checked = !checkbox.checked;
+        }
+      } catch(e) {
+        alert("网络错误");
+        checkbox.checked = !checkbox.checked;
+      }
+    }
+
+    function handleAiClick() {
+      if (aiMaintenanceMode) {
+        alert("🔧 栗子AI生图系统维护中，请稍后再试！");
+        return;
+      }
+      window.open("/ai", "_blank");
+    }
+
+    checkAiMaintenance();
 
     // ===== UTILITY FUNCTIONS =====
     // Generate device fingerprint
@@ -2269,11 +2472,31 @@
       } catch(e) {}
     })();
 
+    // === Toast Notification ===
+    function showToast(msg, duration) {
+      duration = duration || 3000;
+      var t = document.getElementById("globalToast");
+      if (!t) {
+        t = document.createElement("div");
+        t.id = "globalToast";
+        t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:rgba(30,30,30,0.92);color:#fff;padding:10px 22px;border-radius:10px;font-size:14px;z-index:999999;transition:transform 0.35s cubic-bezier(0.16,1,0.3,1),opacity 0.35s;opacity:0;pointer-events:none;backdrop-filter:blur(8px);box-shadow:0 4px 16px rgba(0,0,0,0.2);max-width:90vw;overflow:hidden;text-overflow:ellipsis";
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.opacity = "1";
+      t.style.transform = "translateX(-50%) translateY(0)";
+      clearTimeout(t._timer);
+      t._timer = setTimeout(function() {
+        t.style.opacity = "0";
+        t.style.transform = "translateX(-50%) translateY(80px)";
+      }, duration);
+    }
+
     // === App Popup ===
     function openAppPopup(url, title) {
       // 检查是否是 AI 生图功能（维护中，管理员不受影响）
       const _isAdmin = currentUser && currentUser.role === 'admin';
-      if (url.includes('ai-image.html') && !_isAdmin) {
+      if (url.includes('/ai') && aiMaintenanceMode && !_isAdmin) {
         showToast('🔧 AI生图功能维护中，请稍后再试');
         return;
       }
@@ -2327,6 +2550,7 @@
         document.body.appendChild(overlay);
       }
       document.getElementById('appPopupTitle').textContent = title;
+      if (_isAdmin && url.includes('/ai') && !url.includes('?')) { url = url + '?admin=1'; }
       document.getElementById('appPopupIframe').src = url;
       overlay.classList.add('show');
       document.body.style.overflow = 'hidden';

@@ -107,6 +107,20 @@ async function initDB() {
     );
   `);
 
+  // Site settings table (key-value store)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // Default: AI maintenance OFF (open)
+  const aiMaintRow = db.prepare("SELECT key FROM site_settings WHERE key = ?").get("ai_maintenance");
+  if (!aiMaintRow) {
+    db.prepare("INSERT INTO site_settings (key, value) VALUES (?, ?)").run("ai_maintenance", "false");
+  }
+
   // Add missing columns if needed
   try { db.exec('ALTER TABLE materials ADD COLUMN sort_order INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE materials ADD COLUMN downloads INTEGER DEFAULT 0'); } catch(e) {}
@@ -1473,6 +1487,32 @@ async function setupDBSync() {
     await syncDB();
   }
 }
+
+// === AI Maintenance Settings API ===
+app.get("/api/settings/ai-maintenance", (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM site_settings WHERE key = ?").get("ai_maintenance");
+    res.json({ maintenance: row ? row.value === "true" : false });
+  } catch (err) {
+    console.error("Get AI maintenance setting error:", err);
+    res.status(500).json({ error: "获取设置失败" });
+  }
+});
+
+app.put("/api/settings/ai-maintenance", (req, res) => {
+  try {
+    const { username, enabled } = req.body;
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = ?").get(username, "admin");
+    if (!user) return res.status(403).json({ error: "权限不足" });
+    const val = enabled ? "true" : "false";
+    db.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("ai_maintenance", val);
+    console.log("[Settings] AI maintenance set to:", val, "by", username);
+    res.json({ success: true, maintenance: enabled });
+  } catch (err) {
+    console.error("Set AI maintenance error:", err);
+    res.status(500).json({ error: "设置失败" });
+  }
+});
 
 async function main() {
   await initR2();
