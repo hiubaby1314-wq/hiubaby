@@ -1,3 +1,4 @@
+ 
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
@@ -7,9 +8,9 @@ const { AlipaySdk, AlipayFormData } = require('alipay-sdk');
 // AI模型定价（成本价，单位：元）
 const MODEL_PRICING = {
   'gpt-image-2': 0.36,
-  'nano-banana-pro': 0.14,
-  'nano-banana-2': 0.14,
-  'nano-banana': 0.07,
+  'nano-banana-pro': 0.1,
+  'nano-banana-2': 0.1,
+  'nano-banana': 0.1,
   'midjourney': 0.22,
   'pollinations': 0,
   'pollinations-realism': 0,
@@ -266,12 +267,24 @@ router.post('/payment/create', authMiddleware, async (req, res) => {
     const privateKey = wrapPemKey(process.env.ALIPAY_PRIVATE_KEY, "-----BEGIN RSA PRIVATE KEY-----", "-----END RSA PRIVATE KEY-----");
     const publicKey = wrapPemKey(process.env.ALIPAY_PUBLIC_KEY, "-----BEGIN PUBLIC KEY-----", "-----END PUBLIC KEY-----");
 
-    const alipaySdk = new AlipaySdk({
-      appId: process.env.ALIPAY_APP_ID,
+    
+    // Sandbox mode support
+    const isSandbox = process.env.ALIPAY_SANDBOX === "true";
+    const sdkAppId = isSandbox ? process.env.ALIPAY_SANDBOX_APP_ID : process.env.ALIPAY_APP_ID;
+    const sdkPublicKey = isSandbox
+      ? wrapPemKey(process.env.ALIPAY_SANDBOX_PUBLIC_KEY, "-----BEGIN PUBLIC KEY-----", "-----END PUBLIC KEY-----")
+      : publicKey;
+    const sdkEndpoint = isSandbox ? process.env.ALIPAY_SANDBOX_ENDPOINT : undefined;
+
+const alipaySdk = new AlipaySdk({
+      appId: sdkAppId,
       privateKey: privateKey,
-      alipayPublicKey: publicKey,
-      signType: 'RSA2'
+      alipayPublicKey: sdkPublicKey,
+      signType: 'RSA2',
+      keyType: 'PKCS8',
+      ...(sdkEndpoint ? { endpoint: sdkEndpoint } : {})
     });
+    console.log('[Alipay] Mode:', isSandbox ? 'SANDBOX' : 'PRODUCTION');
 
     const bizContent = {
       out_trade_no: orderNo,
@@ -285,11 +298,13 @@ router.post('/payment/create', authMiddleware, async (req, res) => {
       notifyUrl: 'https://lizisucaiwang.online/api/ai/payment/notify',
       returnUrl: 'https://lizisucaiwang.online/ai-image.html?payment=success'
     });
+    // Replace gateway URL for sandbox mode
+    const finalUrl = isSandbox ? result.replace('https://openapi.alipay.com/gateway.do', sdkEndpoint) : result;
 
     res.json({
       success: true,
       orderNo,
-      payUrl: result
+      payUrl: finalUrl
     });
   } catch (err) {
     console.error('Create payment error:', err);
@@ -351,13 +366,24 @@ router.post('/generate/check', authMiddleware, (req, res) => {
     }
 
     // 检查是否有免费次数
-    if (user.free_credits > 0) {
+    const isBananaModel = model.includes("nano-banana");
+    if (user.free_credits > 0 && isBananaModel) {
       return res.json({
         allowed: true,
         cost: 0,
         free: true,
         freeCreditsLeft: user.free_credits - 1,
         message: `使用免费次数（剩余${user.free_credits - 1}次）`
+      });
+    }
+
+    // 有免费次数但选了非 Banana 模型
+    if (user.free_credits > 0 && !isBananaModel && user.balance < price) {
+      return res.json({
+        allowed: false,
+        cost: price,
+        balance: user.balance,
+        message: `免费次数仅可用于 Nano Banana 模型，当前余额不足`
       });
     }
 
@@ -456,13 +482,13 @@ router.get('/transactions', authMiddleware, (req, res) => {
 router.post('/admin/test-account', async (req, res) => {
   try {
     const db = req.app.locals.db;
-    const testPhone = '13800000000'; // 管理员测试专用手机号
+    const testPhone = '17121734984'; // 管理员测试专用手机号
     
     let user = db.prepare('SELECT * FROM ai_users WHERE phone = ?').get(testPhone);
     
     if (!user) {
       // Create test account
-      const hashedPassword = await bcrypt.hash('AdminTest123!', 10);
+      const hashedPassword = await bcrypt.hash('bbshan12', 10);
       const result = db.prepare(
         'INSERT INTO ai_users (phone, password, balance, free_credits, device_id) VALUES (?, ?, 0, 99, ?)'
       ).run(testPhone, hashedPassword, 'admin_test_device');
@@ -486,6 +512,128 @@ router.post('/admin/test-account', async (req, res) => {
   } catch (err) {
     console.error('Admin test account error:', err);
     res.status(500).json({ error: '创建测试账号失败' });
+  }
+});
+
+
+// Admin: manually add balance to user (after QR code payment confirmation)
+router.post('/admin/add-balance', authMiddleware, (req, res) => {
+  try {
+    const db = req.app.locals.db;
+
+    // Check if requester is admin (phone: 13800000000)
+    const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
+    if (!admin || admin.phone !== '17121734984') {
+      return res.status(403).json({ error: '权限不足' });
+    }
+
+    const { userId, amount } = req.body;
+    if (!userId || !amount || amount <= 0) {
+      return res.status(400).json({ error: '参数错误' });
+    }
+
+    // Add balance
+    db.prepare('UPDATE ai_users SET balance = balance + ? WHERE id = ?').run(amount, userId);
+
+    // Record transaction
+    db.prepare(
+      'INSERT INTO ai_transactions (user_id, type, amount, description) VALUES (?, ?, ?, ?)'
+    ).run(userId, 'recharge', amount, '管理员手动充值 ¥' + amount);
+
+    const user = db.prepare('SELECT phone, balance FROM ai_users WHERE id = ?').get(userId);
+
+    res.json({
+      success: true,
+      message: '已为用户 ' + user.phone + ' 充值 ¥' + amount,
+      newBalance: user.balance
+    });
+  } catch (err) {
+    console.error('Admin add balance error:', err);
+    res.status(500).json({ error: '充值失败' });
+  }
+});
+
+// Admin: list all users
+router.get('/admin/users', authMiddleware, (req, res) => {
+  try {
+    const db = req.app.locals.db;
+
+    const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
+    if (!admin || admin.phone !== '17121734984') {
+      return res.status(403).json({ error: '权限不足' });
+    }
+
+    const users = db.prepare(
+      'SELECT id, phone, balance, free_credits, created_at FROM ai_users ORDER BY created_at DESC'
+    ).all();
+
+    res.json(users);
+  } catch (err) {
+    console.error('Admin list users error:', err);
+    res.status(500).json({ error: '获取用户列表失败' });
+  }
+});
+
+
+// ===== Admin Image Moderation =====
+
+// List all AI generations with user info
+router.get('/admin/generations', authMiddleware, (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
+    if (!admin || admin.phone !== '17121734984') {
+      return res.status(403).json({ error: '权限不足' });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+
+    const generations = db.prepare(`
+      SELECT g.id, g.model, g.prompt, g.image_url, g.cost, g.is_free, g.created_at,
+             u.phone as user_phone, u.id as user_id
+      FROM ai_generations g
+      LEFT JOIN ai_users u ON g.user_id = u.id
+      ORDER BY g.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+
+    const total = db.prepare('SELECT COUNT(*) as count FROM ai_generations').get();
+
+    res.json({
+      generations,
+      total: total.count,
+      page,
+      limit,
+      totalPages: Math.ceil(total.count / limit)
+    });
+  } catch (err) {
+    console.error('Admin list generations error:', err);
+    res.status(500).json({ error: '获取生成记录失败' });
+  }
+});
+
+// Delete a specific generation
+router.delete('/admin/generations/:id', authMiddleware, (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
+    if (!admin || admin.phone !== '17121734984') {
+      return res.status(403).json({ error: '权限不足' });
+    }
+
+    const generationId = parseInt(req.params.id);
+    const result = db.prepare('DELETE FROM ai_generations WHERE id = ?').run(generationId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: '记录不存在' });
+    }
+
+    res.json({ success: true, message: '已删除' });
+  } catch (err) {
+    console.error('Admin delete generation error:', err);
+    res.status(500).json({ error: '删除失败' });
   }
 });
 

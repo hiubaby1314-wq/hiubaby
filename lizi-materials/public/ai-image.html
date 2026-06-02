@@ -472,6 +472,33 @@ header p { margin-top:0.75rem; color:var(--text-muted); font-size:0.95rem; font-
   .controls{flex-direction:column} .control-group{min-width:100%} .gallery-grid{grid-template-columns:1fr}
 }
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@4/dist/fp.min.js"></script>
+<script>
+  // FingerprintJS initialization
+  var fpPromise = null;
+  var cachedVisitorId = localStorage.getItem('fp_visitor_id');
+
+  async function initFingerprint() {
+    if (!fpPromise) {
+      fpPromise = FingerprintJS.load();
+    }
+    const fp = await fpPromise;
+    const result = await fp.get();
+    if (result && result.visitorId) {
+      cachedVisitorId = result.visitorId;
+      localStorage.setItem('fp_visitor_id', result.visitorId);
+    }
+    return result.visitorId;
+  }
+
+  // Initialize on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    initFingerprint().then(function(id) {
+      console.log('FingerprintJS loaded:', id);
+    });
+  });
+</script>
 </head>
 <body>
 
@@ -501,7 +528,7 @@ header p { margin-top:0.75rem; color:var(--text-muted); font-size:0.95rem; font-
       <div id="loginPrompt" style="display:flex;gap:0.8rem;align-items:center;">
         <button onclick="showLoginModal()" style="padding:0.5rem 1.2rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:500;cursor:pointer;transition:all 0.2s;">登录</button>
         <button onclick="showRegisterModal()" style="padding:0.5rem 1.2rem;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:8px;font-weight:500;cursor:pointer;transition:all 0.2s;">注册</button>
-        <span style="font-size:0.85rem;color:var(--text-muted);">未登录每天3次免费</span>
+        <span style="font-size:0.85rem;color:var(--text-muted);">请登录后使用</span>
       </div>
       <div id="userInfo" style="display:none;gap:1rem;align-items:center;">
         <div style="background:var(--surface);padding:0.5rem 1rem;border-radius:8px;border:1px solid var(--border);">
@@ -541,22 +568,22 @@ header p { margin-top:0.75rem; color:var(--text-muted); font-size:0.95rem; font-
 
   <!-- Recharge Modal -->
   <div id="rechargeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:none;align-items:center;justify-content:center;">
-    <div style="background:var(--surface);padding:2rem;border-radius:12px;width:90%;max-width:400px;border:1px solid var(--border);">
-      <h3 style="margin:0 0 1.5rem 0;color:var(--accent);">充值</h3>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.8rem;margin-bottom:1.5rem;">
-        <button onclick="selectAmount(10)" class="amount-btn" data-amount="10" style="padding:1rem;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:1.1rem;font-weight:600;">¥10</button>
-        <button onclick="selectAmount(30)" class="amount-btn" data-amount="30" style="padding:1rem;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:1.1rem;font-weight:600;">¥30</button>
-        <button onclick="selectAmount(50)" class="amount-btn" data-amount="50" style="padding:1rem;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:1.1rem;font-weight:600;">¥50</button>
-        <button onclick="selectAmount(100)" class="amount-btn" data-amount="100" style="padding:1rem;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:1.1rem;font-weight:600;">¥100</button>
-        <button onclick="selectAmount(200)" class="amount-btn" data-amount="200" style="padding:1rem;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:1.1rem;font-weight:600;">¥200</button>
-        <button onclick="selectAmount(500)" class="amount-btn" data-amount="500" style="padding:1rem;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:1.1rem;font-weight:600;">¥500</button>
+    <div style="background:var(--surface);padding:2rem;border-radius:12px;width:90%;max-width:400px;border:1px solid var(--border);max-height:90vh;overflow-y:auto;">
+      <h3 style="margin:0 0 1rem 0;color:var(--accent);text-align:center;">充值</h3>
+      <div style="text-align:center;margin-bottom:1rem;">
+        <img src="/qrcode.jpg" alt="支付宝收款码" style="max-width:250px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
       </div>
-      <div style="margin-bottom:1.5rem;">
-        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">自定义金额</label>
-        <input id="customAmount" type="number" min="1" placeholder="输入金额（最少1元）" style="width:100%;padding:0.8rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);">
+      <div style="background:rgba(200,162,200,0.1);border:1px solid rgba(200,162,200,0.3);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+        <p style="font-size:0.9rem;color:var(--text);margin:0 0 0.5rem 0;"><strong>充值步骤：</strong></p>
+        <ol style="font-size:0.85rem;color:var(--text-muted);margin:0;padding-left:1.2rem;line-height:1.6;">
+          <li>截图保存上方收款码</li>
+          <li>打开支付宝扫码支付</li>
+          <li>支付后联系客服确认</li>
+          <li>余额将在确认后自动到账</li>
+        </ol>
       </div>
-      <button onclick="doRecharge()" style="width:100%;padding:0.8rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:600;cursor:pointer;margin-bottom:1rem;">支付宝支付</button>
-      <button onclick="closeRechargeModal()" style="width:100%;padding:0.6rem;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;cursor:pointer;">取消</button>
+      <p style="text-align:center;font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem;">客服微信：栗子素材网</p>
+      <button onclick="closeRechargeModal()" style="width:100%;padding:0.8rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:600;cursor:pointer;">我知道了</button>
     </div>
   </div>
 
@@ -600,7 +627,7 @@ header p { margin-top:0.75rem; color:var(--text-muted); font-size:0.95rem; font-
 
     <div class="controls">
       <div class="control-group">
-        <label>AI 模型</label>
+        <label>AI 模型 <button onclick="openPricingTable()" style="float:right;background:rgba(212,168,83,.15);color:#d4a853;border:1px solid rgba(212,168,83,.3);border-radius:4px;padding:2px 8px;font-size:.7rem;cursor:pointer;font-weight:500;letter-spacing:.03em;">查看价格表</button></label>
         <select id="modelSelect">
           <option value="nano-banana-pro" data-mode="t2i">Nano Banana Pro (推荐)</option>
           <option value="gpt-image-2" data-mode="t2i">ChatGPT GPT Image 2</option>
@@ -1467,7 +1494,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '0') modalReset();
 });
 
-generateBtn.addEventListener('click', generateImage);
+generateBtn.addEventListener("click", function() { if (!currentUser) { showLoginModal(); showToast("请先登录后使用"); return; } generateImage(); });
 promptInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); generateImage(); }
 });
@@ -1476,7 +1503,51 @@ promptInput.addEventListener('keydown', (e) => {
 loadGallery();
 
 // ========== User System ==========
+// Device fingerprint for one-account-per-device restriction
+async function getDeviceId() {
+  // Use FingerprintJS if available
+  if (cachedVisitorId) {
+    return 'fp_' + cachedVisitorId;
+  }
+
+  // Try to get fresh fingerprint
+  try {
+    const visitorId = await initFingerprint();
+    if (visitorId) {
+      return 'fp_' + visitorId;
+    }
+  } catch (e) {
+    console.warn('FingerprintJS failed:', e);
+  }
+
+  // Fallback to simple fingerprint
+  const nav = navigator;
+  const screen = window.screen;
+  const components = [
+    nav.userAgent,
+    nav.language,
+    screen.colorDepth,
+    screen.width + 'x' + screen.height,
+    new Date().getTimezoneOffset(),
+    nav.hardwareConcurrency || '',
+    nav.platform || ''
+  ];
+  const str = components.join('|');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return 'fallback_' + Math.abs(hash).toString(36);
+}
+
+function openPricingTable() {
+  window.open('/pricing-table.html', '_blank', 'width=960,height=720,scrollbars=yes');
+}
+
 const API_BASE = 'https://lizisucaiwang.online/api/ai';
+const isAdminMode = new URLSearchParams(window.location.search).get('admin') === '1';
 let currentUser = null;
 let authToken = localStorage.getItem('ai_token');
 
@@ -1543,7 +1614,7 @@ async function doRegister() {
     const resp = await fetch(`${API_BASE}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, password })
+      body: JSON.stringify({ phone, password, deviceId: await getDeviceId() })
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
@@ -1567,10 +1638,81 @@ function logout() {
   showToast('已退出登录');
 }
 
+// Admin test account management
+async function initAdminTestAccount() {
+  try {
+    const resp = await fetch(`${API_BASE}/admin/test-account`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) {
+      authToken = data.token;
+      currentUser = data.user;
+      localStorage.setItem('ai_token', authToken);
+      updateAdminBalanceDisplay();
+      console.log('Admin test account ready:', data.user.phone);
+    }
+  } catch (e) {
+    console.error('Failed to init admin test account:', e);
+  }
+}
+
+function updateAdminBalanceDisplay() {
+  const el = document.getElementById('adminBalance');
+  if (el && currentUser) {
+    el.textContent = '¥' + currentUser.balance.toFixed(2);
+  }
+}
+
+function showAdminTestInfo() {
+  if (!currentUser) {
+    showToast('测试账号未初始化');
+    return;
+  }
+  showToast('测试账号: ' + currentUser.phone + ' | 密码: AdminTest123!');
+}
+
+async function refreshAdminBalance() {
+  if (!authToken) return;
+  try {
+    const resp = await fetch(`${API_BASE}/user/info`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (resp.ok) {
+      currentUser = await resp.json();
+      updateAdminBalanceDisplay();
+    }
+  } catch (e) {
+    console.error('Refresh balance error:', e);
+  }
+}
+
 // Update UI based on login status
 function updateUI() {
   const loginPrompt = document.getElementById('loginPrompt');
   const userInfo = document.getElementById('userInfo');
+  // Admin mode: show test account info and enable recharge
+  if (isAdminMode) {
+    loginPrompt.style.display = 'none';
+    userInfo.style.display = 'none';
+    var adminBanner = document.getElementById('adminModeBanner');
+    if (!adminBanner) {
+      adminBanner = document.createElement('div');
+      adminBanner.id = 'adminModeBanner';
+      adminBanner.style.cssText = 'display:flex;align-items:center;gap:1rem;padding:0.5rem 1.2rem;background:rgba(200,162,200,0.15);border:1px solid rgba(200,162,200,0.3);border-radius:10px;flex-wrap:wrap;';
+      adminBanner.innerHTML = `
+        <span style="font-size:1.1rem">&#x1F451;</span>
+        <span style="font-size:0.85rem;color:var(--accent-bright);font-weight:500;">管理员测试账号</span>
+        <div style="background:var(--surface);padding:0.4rem 1rem;border-radius:8px;border:1px solid var(--border);">
+          <span style="font-size:0.8rem;color:var(--text-muted);">余额: </span>
+          <span id="adminBalance" style="font-weight:600;color:var(--accent);">¥0.00</span>
+        </div>
+        <button onclick="showRechargeModal()" style="padding:0.4rem 1rem;background:var(--accent);color:var(--bg);border:none;border-radius:6px;font-size:0.8rem;cursor:pointer;font-weight:500;">充值</button>
+        <button onclick="showAdminTestInfo()" style="padding:0.4rem 0.8rem;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;font-size:0.8rem;cursor:pointer;">账号信息</button>
+      `;
+      document.getElementById('userSystem').prepend(adminBanner);
+    }
+    initAdminTestAccount();
+    return;
+  }
   if (currentUser) {
     loginPrompt.style.display = 'none';
     userInfo.style.display = 'flex';
@@ -1582,37 +1724,30 @@ function updateUI() {
 }
 
 // Recharge
-let selectedAmount = 0;
-function selectAmount(amount) {
-  selectedAmount = amount;
-  document.getElementById('customAmount').value = '';
-  document.querySelectorAll('.amount-btn').forEach(b => {
-    b.style.borderColor = parseInt(b.dataset.amount) === amount ? 'var(--accent)' : 'var(--border)';
-  });
-}
-
-async function doRecharge() {
-  const custom = parseInt(document.getElementById('customAmount').value);
-  const amount = custom || selectedAmount;
-  if (!amount || amount < 1) { showToast('请选择或输入充值金额'); return; }
-  try {
-    const resp = await fetch(`${API_BASE}/payment/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({ amount })
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
-    window.open(data.payUrl, '_blank');
-    showToast('请在新窗口完成支付');
-    closeRechargeModal();
-  } catch (e) {
-    showToast(e.message || '创建订单失败');
-  }
-}
-
 // Check balance before generation
 async function checkBalance(model) {
+  // Admin mode: use real balance from test account
+  if (isAdminMode) {
+    if (!currentUser || !authToken) {
+      await initAdminTestAccount();
+      if (!currentUser) {
+        showToast('测试账号初始化失败');
+        return { allowed: false };
+      }
+    }
+    const checkResp = await fetch(`${API_BASE}/generate/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ model })
+    });
+    const checkData = await checkResp.json();
+    if (!checkData.allowed) {
+      showToast(checkData.message || '余额不足');
+      showRechargeModal();
+      return { allowed: false };
+    }
+    return checkData;
+  }
   try {
     const resp = await fetch(`${API_BASE}/pricing`);
     const pricing = await resp.json();
@@ -1622,20 +1757,10 @@ async function checkBalance(model) {
     if (isFree) return { allowed: true, cost: 0, free: true };
 
     if (!currentUser) {
-      // Not logged in: check localStorage for daily free count
-      const today = new Date().toDateString();
-      const stored = JSON.parse(localStorage.getItem('ai_daily_free') || '{}');
-      if (stored.date !== today) {
-        localStorage.setItem('ai_daily_free', JSON.stringify({ date: today, count: 0 }));
-        stored.date = today;
-        stored.count = 0;
-      }
-      if (stored.count >= 3) {
-        showLoginModal();
-        showToast('未登录每天仅3次免费，请登录后使用');
-        return { allowed: false };
-      }
-      return { allowed: true, cost: 0, free: true, dailyFree: true };
+      // Not logged in: force login
+      showLoginModal();
+      showToast("请先登录后使用");
+      return { allowed: false };
     }
 
     // Logged in: check via API
@@ -1659,6 +1784,26 @@ async function checkBalance(model) {
 
 // Deduct balance after successful generation
 async function deductBalance(model, prompt, imageUrl, isFree) {
+  // Admin mode: deduct from real test account balance
+  if (isAdminMode) {
+    if (!currentUser || !authToken) return;
+    try {
+      const resp = await fetch(`${API_BASE}/generate/deduct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ model, prompt, imageUrl, isFree })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        currentUser.balance = data.balance;
+        currentUser.freeCredits = data.freeCredits;
+        updateAdminBalanceDisplay();
+      }
+    } catch (e) {
+      console.error('Admin deduct error:', e);
+    }
+    return;
+  }
   if (!currentUser) {
     // Not logged in: increment daily free count
     const stored = JSON.parse(localStorage.getItem('ai_daily_free') || '{"date":"","count":0}');
@@ -1685,6 +1830,7 @@ async function deductBalance(model, prompt, imageUrl, isFree) {
 
 // Initialize: check if user is logged in
 async function initUser() {
+
   if (authToken) {
     try {
       const resp = await fetch(`${API_BASE}/user/info`, {
@@ -1719,8 +1865,71 @@ async function initUser() {
   }
 }
 
-initUser();
+// Skip login init in admin mode
+if (!isAdminMode) {
+  initUser();
+} else {
+  updateUI();
+  // Check if payment callback
+  if (window.location.search.includes('payment=success')) {
+    showToast('支付成功，余额已更新');
+    setTimeout(() => {
+      refreshAdminBalance();
+    }, 1000);
+  }
+}
 </script>
 
 
+
+<!-- Customer Service Floating Button -->
+<div id="csFloatBtn" onclick="showCSModal()" style="position:fixed;bottom:2rem;right:2rem;width:56px;height:56px;background:linear-gradient(135deg,#c8a2c8,#a8c8c8);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(200,162,200,0.4);z-index:999;transition:transform 0.2s;">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+</div>
+
+<!-- Customer Service Modal -->
+<div id="csModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);padding:2rem;border-radius:16px;width:90%;max-width:400px;border:1px solid var(--border);text-align:center;" onclick="event.stopPropagation()">
+    <h3 style="margin:0 0 1.5rem 0;color:var(--accent);font-size:1.3rem;">联系客服</h3>
+    <div style="background:rgba(200,162,200,0.1);border:1px solid rgba(200,162,200,0.2);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
+      <p style="font-size:1rem;color:var(--text);margin:0 0 0.8rem 0;"><strong>微信号</strong></p>
+      <p style="font-size:1.5rem;color:var(--accent);font-weight:700;margin:0 0 0.5rem 0;letter-spacing:1px;">FP9044</p>
+      <button onclick="copyCS()" id="copyCSBtn" style="padding:0.5rem 1.5rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:0.9rem;width:auto;">复制微信号</button>
+    </div>
+    <div style="background:rgba(168,200,200,0.1);border:1px solid rgba(168,200,200,0.2);border-radius:12px;padding:1rem;margin-bottom:1.5rem;">
+      <p style="font-size:0.85rem;color:var(--text-muted);margin:0;line-height:1.6;">
+        工作时间：9:00 - 22:00<br>
+        充值确认 / 问题反馈 / 使用帮助<br>
+        添加微信时请备注「栗子AI」
+      </p>
+    </div>
+    
+    <div style="margin-top:1.5rem;padding:1rem;background:rgba(168,200,200,0.1);border:1px solid rgba(168,200,200,0.2);border-radius:12px;">
+      <p style="font-size:0.9rem;color:var(--text);margin:0 0 1rem 0;"><strong>扫码添加客服</strong></p>
+      <img src="/wechat-qr.png" alt="微信客服二维码" style="width:200px;height:200px;border-radius:8px;object-fit:cover;" />
+    </div>
+
+    <button onclick="closeCSModal()" style="width:100%;padding:0.8rem;background:rgba(200,100,100,0.3);color:#ff8888;border:2px solid rgba(200,100,100,0.5);border-radius:8px;cursor:pointer;font-size:1rem;font-weight:600;">✕ 关闭</button>
+  </div>
+</div>
+
+<script>
+function showCSModal() {
+  document.getElementById('csModal').style.display = 'flex';
+}
+function closeCSModal() {
+  document.getElementById('csModal').style.display = 'none';
+}
+function copyCS() {
+  navigator.clipboard.writeText('FP9044').then(function() {
+    var btn = document.getElementById('copyCSBtn');
+    btn.textContent = '已复制!';
+    btn.style.background = '#4CAF50';
+    setTimeout(function() {
+      btn.textContent = '复制微信号';
+      btn.style.background = '';
+    }, 2000);
+  });
+}
+</script>
 </body></html>
