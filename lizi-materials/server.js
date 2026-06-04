@@ -131,7 +131,7 @@ async function initDB() {
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
   if (!adminExists) {
     db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, ?)')
-      .run('admin', crypto.createHash('md5').update('admin123').digest('hex'), 'admin', 0);
+      .run('admin', crypto.createHash('md5').update(process.env.ADMIN_PWD || 'admin123').digest('hex'), 'admin', 0);
   }
 }
 
