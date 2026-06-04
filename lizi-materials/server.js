@@ -17,7 +17,9 @@ function toSimplified(text) {
   return t2sConverter(text);
 }
 
+const helmet = require('helmet');
 const app = express();
+app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP to avoid breaking existing frontend inline scripts
 const PORT = process.env.PORT || 3000;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev';
 const R2_BUCKET = process.env.R2_BUCKET || '';
