@@ -1,3 +1,6 @@
+
+const rateLimit = require('express-rate-limit');
+const morgan = require('morgan');
 require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
@@ -19,7 +22,18 @@ function toSimplified(text) {
 
 const helmet = require('helmet');
 const app = express();
-app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP to avoid breaking existing frontend inline scripts
+app.use(helmet({ contentSecurityPolicy: false }));
+// Advanced Hardening: Logging
+app.use(morgan('combined'));
+
+// Advanced Hardening: Rate Limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { ok: false, error: '请求過於頻繁，請稍後再試' }
+});
+app.use('/api/', limiter); // Apply rate limit to all API routes
+ // Disable CSP to avoid breaking existing frontend inline scripts
 const PORT = process.env.PORT || 3000;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev';
 const R2_BUCKET = process.env.R2_BUCKET || '';
