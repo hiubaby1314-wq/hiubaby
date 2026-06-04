@@ -343,8 +343,27 @@ function getSiteURL(req) {
 
 
 // === CORS ===
+const ALLOWED_ORIGINS = [
+  'https://herng9d2.mule.page',
+  'https://lizisucaiwang.online',
+  'http://43.161.253.21',
+  'https://43.161.253.21',
+  'http://localhost',
+  'http://127.0.0.1'
+];
 app.use(cors({
-  origin: ['https://herng9d2.mule.page', 'https://lizisucaiwang.online'],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (server-side, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+    // Also allow any IP-based origin (for direct IP access)
+    if (/^https?:\/\/\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+    callback(null, false);
+  },
   credentials: true
 }));
 
@@ -360,10 +379,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Cache headers for static assets
 app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), { maxAge: '7d', immutable: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '1d',
+  maxAge: 0,
+  etag: true,
+  lastModified: true,
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'public, max-age=0');
+    if (/\.(html|js|css)$/.test(filePath) || filePath.endsWith('manifest.json') || filePath.endsWith('sw.js')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     }
   }
 }));
@@ -1538,6 +1561,62 @@ app.put("/api/settings/ai-maintenance", (req, res) => {
   }
 });
 
+// === Sora 2 Video API Proxy ===
+const APIYI_VIDEO_KEY = process.env.APIYI_VIDEO_KEY;
+const APIYI_VIDEO_URL = process.env.APIYI_VIDEO_URL || "https://api.zhizengzeng.com";
+
+app.post('/api/video/generate', async (req, res) => {
+  try {
+    const { model, prompt, seconds, size, image_url } = req.body;
+    if (!model || !prompt) return res.status(400).json({ error: '缺少必要参数' });
+    
+    // Build request body - include image_url for i2v (image-to-video)
+    const requestBody = { model, prompt, seconds: String(seconds), size };
+    if (image_url) {
+      requestBody.image_url = image_url;
+    }
+    
+    const resp = await fetch(`${APIYI_VIDEO_URL}/v1/videos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${APIYI_VIDEO_KEY}` },
+      body: JSON.stringify(requestBody)
+    });
+    const data = await resp.json();
+    if (!resp.ok) return res.status(resp.status).json({ error: data.error?.message || '提交失败' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/video/status/:id', async (req, res) => {
+  try {
+    const resp = await fetch(`${APIYI_VIDEO_URL}/v1/videos/${req.params.id}`, {
+      headers: { 'Authorization': `Bearer ${APIYI_VIDEO_KEY}` }
+    });
+    const data = await resp.json();
+    if (!resp.ok) return res.status(resp.status).json({ error: data.error?.message || '查询失败' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/video/download/:id', async (req, res) => {
+  try {
+    const resp = await fetch(`${APIYI_VIDEO_URL}/v1/videos/${req.params.id}/content`, {
+      headers: { 'Authorization': `Bearer ${APIYI_VIDEO_KEY}` }
+    });
+    if (!resp.ok) return res.status(resp.status).json({ error: '下载失败' });
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="sora2-${req.params.id}.mp4"`);
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    res.send(buffer);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // === SPA Catch-all: serve index.html for any unmatched GET routes ===
 // This fixes "NOT FOUND" when users bookmark or directly visit sub-page URLs on mobile/desktop
 app.get('*', (req, res, next) => {
@@ -1553,6 +1632,7 @@ async function main() {
   // Initialize AI system
   initAITables(db);
   app.locals.db = db; // Make db accessible to AI system
+  app.locals.uploadToR2 = uploadToR2; // Make R2 upload accessible to AI video system
   app.use('/api/ai', aiRouter);
   console.log('AI image generation system initialized');
   
