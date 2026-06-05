@@ -1907,3 +1907,19 @@
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') closeAppPopup();
     });
+// 小說下載下拉菜單
+function toggleNovelDropdown() {
+  const dropdown = document.getElementById('novelDropdown');
+  if (dropdown) {
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+// 點擊外部關閉下拉菜單
+document.addEventListener('click', function(e) {
+  const dropdown = document.getElementById('novelDropdown');
+  const btn = e.target.closest('button[onclick*="toggleNovelDropdown"]');
+  if (dropdown && !btn && !e.target.closest('#novelDropdown')) {
+    dropdown.style.display = 'none';
+  }
+});
