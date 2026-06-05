@@ -1909,7 +1909,7 @@
     });
 // 小說下載下拉菜單
 function toggleNovelDropdown() {
-  const dropdown = document.getElementById('novelDropdown');
+  const dropdown = document.getElementById('novelDropdown') || document.getElementById('novelDropdownLogin');
   if (dropdown) {
     dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
   }
@@ -1917,9 +1917,20 @@ function toggleNovelDropdown() {
 
 // 點擊外部關閉下拉菜單
 document.addEventListener('click', function(e) {
-  const dropdown = document.getElementById('novelDropdown');
+  const dropdowns = ['novelDropdown', 'novelDropdownLogin'];
   const btn = e.target.closest('button[onclick*="toggleNovelDropdown"]');
-  if (dropdown && !btn && !e.target.closest('#novelDropdown')) {
-    dropdown.style.display = 'none';
+  if (!btn) {
+    dropdowns.forEach(id => {
+      const dropdown = document.getElementById(id);
+      if (dropdown && !e.target.closest('#' + id)) {
+        dropdown.style.display = 'none';
+      }
+    });
   }
 });
+
+// 打开小说工具（隐藏URL）
+function openNovelTool() {
+  const url = atob('aHR0cHM6Ly9zYy5vMy5oay8=');
+  window.open(url, '_blank');
+}
