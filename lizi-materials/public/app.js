@@ -1929,6 +1929,12 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// 打开番茄/七猫下载器工具（隐藏URL）
+function openFanqieTool() {
+  const url = atob('aHR0cHM6Ly82MmozZ3h0ei5tdWxlLnBhZ2Uv');
+  window.open(url, '_blank');
+}
+
 // 打开小说工具（隐藏URL）
 function openNovelTool() {
   const url = atob('aHR0cHM6Ly9zYy5vMy5oay8=');
