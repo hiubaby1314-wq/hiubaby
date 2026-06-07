@@ -7,97 +7,93 @@ const { AlipaySdk, AlipayFormData } = require('alipay-sdk');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// AI模型定价（成本价，单位：人民币元）- zhizengzeng.com OpenAI + Gemini 代理
-// USD/CNY ≈ 7.25
+// AI模型定价（成本价，单位：人民币元）- zhizengzeng.com
+// USD/CNY ≈ 7.25, 售价 = 成本 × 1.10
+// 豆包模型已为人币定价，无需转换
 const MODEL_PRICING = {
-  // GPT-Image-1: 按品质/分辨率定价（成本价 USD: Low/1K=$0.011 Low/2K=$0.016 Med/1K=$0.042 Med/2K=$0.063 High/1K=$0.167 High/2K=$0.25）
-  'gpt-image-1': { 'low-1K': 0.08, 'low-2K': 0.12, 'medium-1K': 0.31, 'medium-2K': 0.46, 'high-1K': 1.22, 'high-2K': 1.82 },
-  'gpt-image-1.5': { 'low-1K': 0.07, 'low-2K': 0.09, 'medium-1K': 0.25, 'medium-2K': 0.37, 'high-1K': 0.97, 'high-2K': 1.46 },
-  // GPT-Image-1-Mini: 轻量版（USD: Low/1K=$0.005 Low/2K=$0.006 Med/1K=$0.011 Med/2K=$0.015）
-  'gpt-image-1-mini': { 'low-1K': 0.04, 'low-2K': 0.05, 'medium-1K': 0.08, 'medium-2K': 0.11 },
-  // GPT-Image-2: 按token计费，取典型生成场景估算（Output 30 USD/M tokens）
+  // === OpenAI Images API 文生图/图生图 ===
+  'dall-e-2': { '1024-1024': 0.145, '512-512': 0.131, '256-256': 0.116 },
+  'dall-e-3': {
+    'standard-1024': 0.290, 'standard-1792': 0.580,
+    'hd-1024': 0.580, 'hd-1792': 0.870
+  },
   'gpt-image-2': 1.00,
-  // DALL-E 3（USD: Std/1K=$0.04 Std/2K=$0.08 HD/1K=$0.08 HD/2K=$0.12）
-  // Gemini 2.5 Flash Image（$0.039/张）
-  'gemini-2.5-flash-image': 0.29,
-  // Imagen 4.0 系列（Google）
-  'imagen-4.0-generate': 0.29,         // $0.04/张
-  'imagen-4.0-ultra-generate': 0.44,   // $0.06/张
-  'imagen-4.0-fast-generate': 0.15,    // $0.02/张
-  // 图生图
-  'gpt-image-1-edit': { 'low-1K': 0.08, 'low-2K': 0.12, 'medium-1K': 0.31, 'medium-2K': 0.46, 'high-1K': 1.22, 'high-2K': 1.82 },
-  'pollinations-i2i': 0,
-  // 免费模型（Pollinations）
-  'pollinations': 0,
-  'pollinations-realism': 0,
-  'pollinations-anime': 0,
-  'pollinations-3d': 0,
-  'pollinations-turbo': 0,
-  // === 视频生成模型 (API易) ===
-  // Sora 2 标准版 (720p): $0.10/秒
+  'gpt-image-1.5': { 'low-1K': 0.080, 'low-2K': 0.116, 'medium-1K': 0.305, 'medium-2K': 0.457, 'high-1K': 1.211, 'high-2K': 1.813 },
+  'chatgpt-image-latest': 1.00,
+  'gpt-image-1': { 'low-1K': 0.080, 'low-2K': 0.116, 'medium-1K': 0.305, 'medium-2K': 0.457, 'high-1K': 1.211, 'high-2K': 1.813 },
+  'gpt-image-1-mini': { 'low-1K': 0.036, 'low-2K': 0.044, 'medium-1K': 0.080, 'medium-2K': 0.109 },
+  // === Google Gemini 对话式图像生成 ===
+  'gemini-3.1-flash-image': 0.283,
+  'gemini-3-pro-image': 0.283,
+  'gemini-2.5-flash-image': 0.283,
+  // === Google Imagen 专用图像生成 ===
+  'imagen-4.0-generate-001': 0.290,
+  'imagen-4.0-ultra-generate-001': 0.435,
+  'imagen-4.0-fast-generate-001': 0.145,
+  'imagen-4.0-generate-preview-06-06': 0.218,
+  'imagen-4.0-ultra-generate-preview-06-06': 0.218,
+  'imagen-3.0-generate-002': 0.218,
+  // === xAI Grok 图像生成 ===
+  'grok-imagine-image-pro': 0.508,
+  'grok-imagine-image': 0.145,
+  // === 字节豆包 Seedream / SeedEdit 文生图/图生图 (已为人民币) ===
+  'doubao-seedream-5-0-lite-250612': 0.22,
+  'doubao-seedream-5-0-250612': 0.22,
+  'doubao-seedream-4-5-251128': 0.25,
+  'doubao-seedream-4-0-250828': 0.20,
+  'doubao-seededit-3-0-i2i-250628': 0.30,
+  'doubao-seedream-3-0-t2i-250415': 0.259,
+  // === 视频生成模型 ===
+  // Sora 2
   'sora-2': { '720p-4s': 2.90, '720p-8s': 5.80, '720p-12s': 8.70 },
-  // Sora 2 Pro 专业版 (720p $0.30/秒, 1024p $0.50/秒, 1080p $0.70/秒)
   'sora-2-pro': {
     '720p-4s': 8.70, '720p-8s': 17.40, '720p-12s': 26.10,
     '1024p-4s': 14.50, '1024p-8s': 29.00, '1024p-12s': 43.50,
     '1080p-4s': 20.30, '1080p-8s': 40.60, '1080p-12s': 60.90
   },
-  // === API易 图像模型 ===
-  'apiyi-nano-banana-1': 0.15,
-  'apiyi-nano-banana-pro': 0.65,
-  'apiyi-nano-banana-2': 0.40,
-  'apiyi-gpt-image-2-all': 0.22,
-  'apiyi-gpt-image-2-vip': 0.22,
-                  'gpt-image-1.5-edit': { 'low-1K': 0.07, 'low-2K': 0.09, 'medium-1K': 0.25, 'medium-2K': 0.37, 'high-1K': 0.97, 'high-2K': 1.46 },
-  'gpt-image-2-edit': 1.00,
-  'apiyi-nano-banana-pro-edit': 0.65,
-  'apiyi-nano-banana-2-edit': 0.40,
-          'apiyi-seedream-5': 0.25,
-  'apiyi-seedream-4-5': 0.29,
-  'apiyi-seedream-4': 0.22,
-    // === 豆包 Seedance 视频模型 (双价格：预扣最高价，生成后退差价) ===
-  // zhizengzeng.com 官方价格: ¥28-46/百万tokens (含3%后: ¥28.84-47.38/百万tokens)
-  // 预估 ~37,400 tokens/秒 (基于11秒=411,300 tokens实测)
+  // Seedance 视频 (双价格)
   'seedance-2-0': {
     dualPrice: true,
-    minRate: 28.84,  // ¥/百万tokens (成本+3%)
-    maxRate: 47.38,  // ¥/百万tokens (成本+3%)
+    minRate: 28.84,
+    maxRate: 47.38,
     tokensPerSecond: 37400,
     tiers: {
-      '5s':  { minCost: 5.39, maxCost: 8.86 },   // 187K tokens
-      '8s':  { minCost: 8.62, maxCost: 14.17 },  // 299K tokens
-      '10s': { minCost: 10.78, maxCost: 17.71 }, // 374K tokens
-      '11s': { minCost: 11.86, maxCost: 19.48 }  // 411K tokens
+      '4s':  { minCost: 4.31, maxCost: 7.09 },
+      '5s':  { minCost: 5.39, maxCost: 8.86 },
+      '8s':  { minCost: 8.62, maxCost: 14.17 },
+      '10s': { minCost: 10.78, maxCost: 17.71 },
+      '15s': { minCost: 16.17, maxCost: 26.57 }
     }
   },
   'seedance-2-0-fast': {
     dualPrice: true,
-    minRate: 22.66,  // ¥22/百万tokens +3%
-    maxRate: 38.11,  // ¥37/百万tokens +3%
+    minRate: 22.66,
+    maxRate: 38.11,
     tokensPerSecond: 37400,
     tiers: {
+      '4s':  { minCost: 3.39, maxCost: 5.69 },
       '5s':  { minCost: 4.23, maxCost: 7.11 },
       '8s':  { minCost: 6.78, maxCost: 11.39 },
       '10s': { minCost: 8.47, maxCost: 14.25 },
-      '11s': { minCost: 9.32, maxCost: 15.67 }
+      '15s': { minCost: 12.71, maxCost: 21.38 }
     }
   },
   'kling-v1-5': {
+    dualPrice: true,
     tiers: {
       '5s':  { minCost: 6.50, maxCost: 6.50 },
       '10s': { minCost: 12.00, maxCost: 12.00 }
     }
   },
   'minimax-m2-5': {
+    dualPrice: true,
     tiers: {
       '5s':  { minCost: 5.80, maxCost: 5.80 },
       '10s': { minCost: 10.50, maxCost: 10.50 }
     }
   },
-  // === WAN 万相 多视角图片生成 (智增增阿里千问) ===
-  'wan2.7-image': 0.50,
-  'wan2.7-image-pro': 0.80,
 };
+
 
 // 根据模型+品质+分辨率获取成本价
 function getModelCost(model, quality, resolution) {
@@ -122,18 +118,18 @@ function getModelCost(model, quality, resolution) {
   return 0;
 }
 
-// 根据模型类型获取加价率（视频模型15%，图像模型30%，双价格模型已在价格中包含）
+// 根据模型类型获取加价率（所有模型统一10%利润）
 function getMarkupRate(model) {
-  const pricing = MODEL_PRICING[model];
-  if (pricing && pricing.dualPrice) return 1; // 双价格模型已在价格中包含加价
-  return model && model.startsWith('sora-2') ? 1.15 : 1.3;
+  return 1.10;
 }
 
-// 判断模型是否允许使用免费次数（视频模型不允许，价格>¥0.20不允许）
+// 判断模型是否允许使用免费次数（视频模型不允许，售价>¥0.30不允许）
 function isFreeEligible(model) {
   if (!model) return true;
   if (model.startsWith('sora-2')) return false;
   if (model.startsWith('seedance')) return false;
+  if (model.startsWith('kling')) return false;
+  if (model.startsWith('minimax')) return false;
   // 获取模型成本价（取最低档）
   const pricing = MODEL_PRICING[model];
   if (!pricing) return true; // 免费模型或未知
@@ -145,13 +141,13 @@ function isFreeEligible(model) {
     const values = Object.values(pricing).filter(v => typeof v === 'number');
     cost = values.length > 0 ? Math.min(...values) : 0;
   }
-  const markupRate = model.startsWith('sora-2') ? 1.15 : 1.3;
-  const sellPrice = cost * markupRate;
-  return sellPrice <= 0.20;
+  // 统一10%利润
+  const sellPrice = cost * 1.10;
+  return sellPrice <= 0.30;
 }
 
 // 每日免费次数：每天重置为1次
-const DAILY_FREE_LIMIT = 1;
+const DAILY_FREE_LIMIT = 3;
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
@@ -180,28 +176,34 @@ function getSellPrice(model, quality, resolution) {
 // 获取模型的所有价格档位（用于前端展示）
 function getModelPriceTiers(model) {
   const pricing = MODEL_PRICING[model];
-  // 双价格模型 (Seedance)
+  const markup = 1.10; // 统一10%利润
+  
+  // 双价格模型 (Seedance, Kling, Minimax)
   if (pricing && pricing.dualPrice) {
     const tiers = {};
     for (const [key, tier] of Object.entries(pricing.tiers)) {
-      tiers[key] = { minCost: tier.minCost, maxCost: tier.maxCost, minPrice: tier.minCost, maxPrice: tier.maxCost };
+      tiers[key] = { 
+        minCost: tier.minCost, 
+        maxCost: tier.maxCost, 
+        minPrice: Math.ceil(tier.minCost * markup * 100) / 100, 
+        maxPrice: Math.ceil(tier.maxCost * markup * 100) / 100 
+      };
     }
     const allMin = Object.values(pricing.tiers).map(t => t.minCost);
     const allMax = Object.values(pricing.tiers).map(t => t.maxCost);
     return {
       tiers,
-      minPrice: Math.min(...allMin),
-      maxPrice: Math.max(...allMax),
+      minPrice: Math.ceil(Math.min(...allMin) * markup * 100) / 100,
+      maxPrice: Math.ceil(Math.max(...allMax) * markup * 100) / 100,
       dualPrice: true,
       free: false
     };
   }
   if (typeof pricing === 'number') {
-    return { price: getSellPrice(model), cost: pricing, free: pricing === 0 };
+    return { price: Math.ceil(pricing * markup * 100) / 100, cost: pricing, free: pricing === 0 };
   }
   if (typeof pricing === 'object' && pricing !== null) {
     const tiers = {};
-    const markup = getMarkupRate(model);
     for (const [key, cost] of Object.entries(pricing)) {
       tiers[key] = { cost, price: Math.ceil(cost * markup * 100) / 100 };
     }
@@ -212,7 +214,7 @@ function getModelPriceTiers(model) {
 }
 
 // JWT密钥（从环境变量读取）
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'chestnut-ai-secret-2024';
 
 // 初始化数据库表
 function initTables(db) {
@@ -295,6 +297,43 @@ function authMiddleware(req, res, next) {
   }
 }
 
+// 主站管理员自动登录
+router.post('/admin-auto-login', async (req, res) => {
+  try {
+    const siteToken = req.headers['x-auth-token'];
+    if (!siteToken) return res.status(401).json({ error: '未提供主站凭证' });
+
+    const db = req.app.locals.db;
+    const session = db.prepare('SELECT username FROM sessions WHERE token = ?').get(siteToken);
+    if (!session) return res.status(401).json({ error: '主站登录已过期' });
+
+    const user = db.prepare('SELECT role FROM users WHERE username = ?').get(session.username);
+    if (!user || user.role !== 'admin') return res.status(403).json({ error: '非管理员' });
+
+    // Find admin AI user (is_admin=1)
+    const aiUser = db.prepare('SELECT * FROM ai_users WHERE is_admin = 1 LIMIT 1').get();
+    if (!aiUser) return res.status(404).json({ error: '未找到管理员AI账号' });
+
+    const token = jwt.sign({ userId: aiUser.id }, JWT_SECRET, { expiresIn: '30d' });
+    const freeCredits = ensureDailyFreeReset(db, aiUser.id);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: aiUser.id,
+        phone: aiUser.phone,
+        balance: aiUser.balance,
+        freeCredits: freeCredits,
+        isAdmin: 1
+      }
+    });
+  } catch (err) {
+    console.error('Admin auto-login error:', err);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
 // 注册
 router.post('/register', async (req, res) => {
   try {
@@ -350,7 +389,8 @@ router.post('/register', async (req, res) => {
         id: result.lastInsertRowid,
         phone,
         balance: 0,
-        freeCredits: DAILY_FREE_LIMIT
+        freeCredits: DAILY_FREE_LIMIT,
+        isAdmin: 0
       }
     });
   } catch (err) {
@@ -390,7 +430,8 @@ router.post('/login', async (req, res) => {
         id: user.id,
         phone: user.phone,
         balance: user.balance,
-        freeCredits: freeCredits
+        freeCredits: freeCredits,
+        isAdmin: user.is_admin || 0
       }
     });
   } catch (err) {
@@ -413,11 +454,46 @@ router.get('/user/info', authMiddleware, (req, res) => {
       id: user.id,
       phone: user.phone,
       balance: user.balance,
-      freeCredits: freeCredits
+      freeCredits: freeCredits,
+      isAdmin: user.is_admin || 0
     });
   } catch (err) {
     console.error('Get user info error:', err);
     res.status(500).json({ error: '获取用户信息失败' });
+  }
+});
+
+// 修改密码
+router.post('/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: '请填写完整' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: '密码至少6位' });
+    }
+
+    const db = req.app.locals.db;
+    const user = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+
+    // 验证旧密码
+    const valid = await bcrypt.compare(oldPassword, user.password);
+    if (!valid) {
+      return res.status(400).json({ error: '旧密码错误' });
+    }
+
+    // 更新密码
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE ai_users SET password = ? WHERE id = ?').run(hashedPassword, req.userId);
+
+    res.json({ success: true, message: '密码修改成功' });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ error: '修改密码失败' });
   }
 });
 
@@ -560,23 +636,71 @@ router.post('/payment/notify', express.urlencoded({ extended: false }), async (r
   }
 });
 
-// 生成图片前检查余额并扣费
+// 生成前检查余额（图像/视频通用）
 router.post('/generate/check', authMiddleware, (req, res) => {
   try {
     const { model, quality, resolution } = req.body;
-    const price = getSellPrice(model, quality, resolution);
+    
+    // 判断是否为视频模型
+    const isVideoModel = model && (
+      model.startsWith('sora-2') || 
+      model.startsWith('seedance') || 
+      model.startsWith('kling') || 
+      model.startsWith('minimax')
+    );
+    
+    let price = 0;
+    const pricing = MODEL_PRICING[model];
+    
+    if (isVideoModel) {
+      // 视频模型：返回最高价格作为预扣参考
+      if (pricing && pricing.dualPrice) {
+        // 双价格模型 (Seedance, Kling, Minimax)
+        const duration = resolution?.match(/(\d+)s$/)?.[1] || '5';
+        const tier = pricing.tiers[duration + 's'] || pricing.tiers['5s'];
+        if (tier) {
+          price = Math.ceil(tier.maxCost * 1.10 * 100) / 100;
+        }
+      } else if (pricing && typeof pricing === 'object') {
+        // Sora 系列
+        if (pricing[resolution] !== undefined) {
+          price = Math.ceil(pricing[resolution] * 1.10 * 100) / 100;
+        } else {
+          // 取最高档价格
+          const prices = Object.values(pricing);
+          price = Math.ceil(Math.max(...prices) * 1.10 * 100) / 100;
+        }
+      }
+    } else {
+      // 图像模型
+      price = getSellPrice(model, quality, resolution);
+    }
+    
     const isFree = price === 0;
 
     const db = req.app.locals.db;
     const freeCredits = ensureDailyFreeReset(db, req.userId);
     const user = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
 
+    // 管理员不设限额：跳过余额与免费次数检查
+    if (user && user.is_admin) {
+      return res.json({
+        allowed: true,
+        cost: 0,
+        free: true,
+        admin: true,
+        balance: user.balance,
+        isVideo: isVideoModel,
+        message: '管理员无限额'
+      });
+    }
+
     if (isFree) {
       return res.json({ allowed: true, cost: 0, free: true });
     }
 
-    // 检查是否有免费次数（仅低价模型可用，视频模型除外）
-    if (freeCredits > 0 && isFreeEligible(model)) {
+    // 检查是否有免费次数（仅低价图像模型可用，视频模型除外）
+    if (!isVideoModel && freeCredits > 0 && isFreeEligible(model)) {
       return res.json({
         allowed: true,
         cost: 0,
@@ -599,7 +723,8 @@ router.post('/generate/check', authMiddleware, (req, res) => {
     res.json({
       allowed: true,
       cost: price,
-      balance: user.balance - price
+      balance: user.balance - price,
+      isVideo: isVideoModel
     });
   } catch (err) {
     console.error('Generate check error:', err);
@@ -620,8 +745,13 @@ router.post('/generate/deduct', authMiddleware, (req, res) => {
     const user = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
     let actualCost = price;
     let usedFree = false;
+    const isAdmin = !!(user && user.is_admin);
 
-    if (isFree || price === 0 || (freeCredits > 0 && isFreeEligible(model))) {
+    if (isAdmin) {
+      // 管理员不扣费、不消耗免费次数
+      actualCost = 0;
+      usedFree = false;
+    } else if (isFree || price === 0 || (freeCredits > 0 && isFreeEligible(model))) {
       actualCost = 0;
       usedFree = freeCredits > 0;
       if (usedFree) {
@@ -635,13 +765,17 @@ router.post('/generate/deduct', authMiddleware, (req, res) => {
     // 记录生成
     db.prepare(
       'INSERT INTO ai_generations (user_id, model, prompt, image_url, cost, is_free) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(req.userId, model, prompt, imageUrl, actualCost, usedFree || price === 0 ? 1 : 0);
+    ).run(req.userId, model, prompt, imageUrl, actualCost, (isAdmin || usedFree || price === 0) ? 1 : 0);
 
     // 记录交易
     if (actualCost > 0) {
       db.prepare(
         'INSERT INTO ai_transactions (user_id, type, amount, model, description) VALUES (?, ?, ?, ?, ?)'
       ).run(req.userId, 'generate', -actualCost, model, `生成图片: ${model}`);
+    } else if (isAdmin) {
+      db.prepare(
+        'INSERT INTO ai_transactions (user_id, type, amount, model, description) VALUES (?, ?, ?, ?, ?)'
+      ).run(req.userId, 'admin', 0, model, `管理员生成: ${model}`);
     } else if (usedFree) {
       db.prepare(
         'INSERT INTO ai_transactions (user_id, type, amount, model, description) VALUES (?, ?, ?, ?, ?)'
@@ -662,38 +796,69 @@ router.post('/generate/deduct', authMiddleware, (req, res) => {
   }
 });
 
-// === 双价格模型：预扣最高价 ===
+// === 视频生成：预扣最高价 ===
 router.post('/generate/prededuct', authMiddleware, (req, res) => {
   try {
-    const { model, duration } = req.body;
+    const { model, duration, resolution } = req.body;
     const pricing = MODEL_PRICING[model];
-
-    if (!pricing || !pricing.dualPrice) {
-      return res.status(400).json({ error: '该模型不支持双价格' });
+    
+    // 判断是否为视频模型
+    const isVideoModel = model && (
+      model.startsWith('sora-2') || 
+      model.startsWith('seedance') || 
+      model.startsWith('kling') || 
+      model.startsWith('minimax')
+    );
+    
+    if (!isVideoModel) {
+      return res.status(400).json({ error: '该接口仅支持视频模型' });
     }
 
-    const tier = pricing.tiers[duration || '5s'];
-    if (!tier) {
-      return res.status(400).json({ error: '无效的时长选项' });
+    let maxPrice = 0;
+    let minPrice = 0;
+    
+    if (pricing && pricing.dualPrice) {
+      // 双价格模型 (Seedance, Kling, Minimax)
+      const tier = pricing.tiers[duration || '5s'];
+      if (!tier) {
+        return res.status(400).json({ error: '无效的时长选项' });
+      }
+      // 应用10%利润
+      maxPrice = Math.ceil(tier.maxCost * 1.10 * 100) / 100;
+      minPrice = Math.ceil(tier.minCost * 1.10 * 100) / 100;
+    } else if (pricing && typeof pricing === 'object') {
+      // Sora 系列 - 按分辨率+时长定价
+      const key = resolution || '720p-5s';
+      if (pricing[key] !== undefined) {
+        maxPrice = Math.ceil(pricing[key] * 1.10 * 100) / 100;
+        minPrice = maxPrice; // Sora 定价固定，无差异
+      } else {
+        // 取最高档作为预扣价
+        const prices = Object.values(pricing);
+        maxPrice = Math.ceil(Math.max(...prices) * 1.10 * 100) / 100;
+        minPrice = maxPrice;
+      }
+    } else {
+      return res.status(400).json({ error: '不支持的视频模型' });
     }
 
-    const maxPrice = tier.maxCost;
-    const minPrice = tier.minCost;
     const db = req.app.locals.db;
     const user = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
 
-    // 检查免费次数（视频模型不允许使用免费次数）
-    if (user.free_credits > 0 && isFreeEligible(model)) {
+    // 管理员不设限额：跳过预扣
+    if (user && user.is_admin) {
       return res.json({
         allowed: true,
         preCharge: 0,
         minPrice,
         maxPrice,
-        free: true,
-        freeCreditsLeft: user.free_credits - 1
+        balance: user.balance,
+        admin: true,
+        message: '管理员无限额，无需预扣'
       });
     }
 
+    // 视频模型不允许使用免费次数
     if (user.balance < maxPrice) {
       return res.json({
         allowed: false,
@@ -714,7 +879,7 @@ router.post('/generate/prededuct', authMiddleware, (req, res) => {
       minPrice,
       maxPrice,
       balance: updatedUser.balance,
-      message: `已预扣¥${maxPrice}，生成后按实际费用退还差价`
+      message: `已预扣¥${maxPrice}，生成后按实际费用结算`
     });
   } catch (err) {
     console.error('Pre-deduct error:', err);
@@ -722,42 +887,82 @@ router.post('/generate/prededuct', authMiddleware, (req, res) => {
   }
 });
 
-// === 双价格模型：退还差价 ===
-router.post('/generate/refund', authMiddleware, (req, res) => {
+// === 视频生成：结算实际费用 ===
+router.post('/generate/settle', authMiddleware, (req, res) => {
   try {
-    const { model, duration, actualTokens, preCharge, prompt, videoUrl, isFree } = req.body;
+    const { model, duration, resolution, actualTokens, preCharge, prompt, videoUrl, actualCost: clientActualCost } = req.body;
     const pricing = MODEL_PRICING[model];
 
-    if (!pricing || !pricing.dualPrice) {
-      return res.status(400).json({ error: '该模型不支持双价格' });
+    // 判断是否为视频模型
+    const isVideoModel = model && (
+      model.startsWith('sora-2') || 
+      model.startsWith('seedance') || 
+      model.startsWith('kling') || 
+      model.startsWith('minimax')
+    );
+    
+    if (!isVideoModel) {
+      return res.status(400).json({ error: '该接口仅支持视频模型' });
     }
 
     const db = req.app.locals.db;
     const user = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
 
-    // 计算实际费用（按实际tokens × 实际价格档位）
-    const actualMinCost = Math.ceil((actualTokens / 1000000) * pricing.minRate * 100) / 100;
-    const actualMaxCost = Math.ceil((actualTokens / 1000000) * pricing.maxRate * 100) / 100;
-    // 实际费用取中间值（更公平）
-    const actualCost = Math.ceil((actualMinCost + actualMaxCost) / 2 * 100) / 100;
+    // 管理员不设限额：跳过实际扣费，仅记录生成
+    if (user && user.is_admin) {
+      db.prepare(
+        'INSERT INTO ai_generations (user_id, model, prompt, image_url, cost, is_free) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(req.userId, model, prompt, videoUrl, 0, 1);
+      db.prepare(
+        'INSERT INTO ai_transactions (user_id, type, amount, model, description) VALUES (?, ?, ?, ?, ?)'
+      ).run(req.userId, 'admin', 0, model, `管理员生成视频: ${model} ${duration || ''}秒`);
+      return res.json({
+        success: true,
+        preCharge: 0,
+        actualCost: 0,
+        actualTokens: actualTokens || 0,
+        refundAmount: 0,
+        balance: user.balance,
+        freeCredits: user.free_credits,
+        admin: true,
+        message: '管理员无限额，无费用结算'
+      });
+    }
 
+    let actualCost = 0;
     let refundAmount = 0;
     let finalCost = 0;
-    let usedFree = false;
 
-    if (isFree || (user.free_credits > 0 && isFreeEligible(model))) {
-      // 免费生成，全额退款
-      refundAmount = preCharge;
-      finalCost = 0;
-      usedFree = user.free_credits > 0;
-      if (usedFree) {
-        db.prepare('UPDATE ai_users SET free_credits = free_credits - 1 WHERE id = ?').run(req.userId);
+    if (pricing && pricing.dualPrice) {
+      if (pricing.minRate !== undefined && pricing.maxRate !== undefined && actualTokens) {
+        // 按 tokens 计费的双价格模型 (Seedance) - 应用10%利润
+        const actualMinCost = Math.ceil((actualTokens / 1000000) * pricing.minRate * 1.10 * 100) / 100;
+        const actualMaxCost = Math.ceil((actualTokens / 1000000) * pricing.maxRate * 1.10 * 100) / 100;
+        // 实际费用取中间值（更公平）
+        actualCost = Math.ceil((actualMinCost + actualMaxCost) / 2 * 100) / 100;
+      } else {
+        // 固定档位模型 (Kling, Minimax) - 按时长查表
+        const rawDur = (duration || '5').toString().toLowerCase();
+        const durKey = /^\d+s$/.test(rawDur) ? rawDur : `${parseInt(rawDur, 10) || 5}s`;
+        const tier = pricing.tiers[durKey] || pricing.tiers[Object.keys(pricing.tiers)[0]];
+        actualCost = Math.ceil(tier.maxCost * 1.10 * 100) / 100;
+      }
+    } else if (pricing && typeof pricing === 'object') {
+      // Sora 系列 - 按分辨率+时长固定定价
+      const key = resolution || '720p-' + (duration || '5') + 's';
+      if (pricing[key] !== undefined) {
+        actualCost = Math.ceil(pricing[key] * 1.10 * 100) / 100;
+      } else {
+        // 如果客户端提供了实际费用，使用客户端提供的值
+        actualCost = clientActualCost || preCharge;
       }
     } else {
-      // 计算退款金额
-      refundAmount = Math.max(0, preCharge - actualCost);
-      finalCost = actualCost;
+      actualCost = clientActualCost || preCharge;
     }
+
+    // 计算退款金额
+    refundAmount = Math.max(0, Math.ceil((preCharge - actualCost) * 100) / 100);
+    finalCost = actualCost;
 
     // 退还差价
     if (refundAmount > 0) {
@@ -770,13 +975,13 @@ router.post('/generate/refund', authMiddleware, (req, res) => {
     // 记录生成
     db.prepare(
       'INSERT INTO ai_generations (user_id, model, prompt, image_url, cost, is_free) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(req.userId, model, prompt, videoUrl, finalCost, usedFree || isFree ? 1 : 0);
+    ).run(req.userId, model, prompt, videoUrl, finalCost, 0);
 
     // 记录交易
     if (finalCost > 0) {
       db.prepare(
         'INSERT INTO ai_transactions (user_id, type, amount, model, description) VALUES (?, ?, ?, ?, ?)'
-      ).run(req.userId, 'generate', -finalCost, model, `生成视频: ${model} ${duration}秒 (实际${actualTokens}tokens)`);
+      ).run(req.userId, 'generate', -finalCost, model, `生成视频: ${model} ${duration}秒 (预扣¥${preCharge}, 实付¥${finalCost})`);
     }
 
     const updatedUser = db.prepare('SELECT balance, free_credits FROM ai_users WHERE id = ?').get(req.userId);
@@ -785,14 +990,15 @@ router.post('/generate/refund', authMiddleware, (req, res) => {
       success: true,
       preCharge,
       actualCost,
-      actualTokens,
+      actualTokens: actualTokens || 0,
       refundAmount,
       balance: updatedUser.balance,
-      freeCredits: updatedUser.free_credits
+      freeCredits: updatedUser.free_credits,
+      message: refundAmount > 0 ? `已退还¥${refundAmount}差价` : '费用已结算'
     });
   } catch (err) {
-    console.error('Refund error:', err);
-    res.status(500).json({ error: '退款失败' });
+    console.error('Settle error:', err);
+    res.status(500).json({ error: '结算失败' });
   }
 });
 
@@ -803,15 +1009,15 @@ const ZHIZENGZENG_BASE_URL = 'https://api.zhizengzeng.com';
 // 提交视频生成任务
 router.post('/seedance/generate', authMiddleware, async (req, res) => {
   try {
-    const { model, prompt, duration, ratio, image_url } = req.body;
+    const { model, prompt, duration, ratio, image_url, resolution } = req.body;
     if (!model || !prompt) {
       return res.status(400).json({ error: '缺少必要参数' });
     }
 
     // 映射模型ID
     const modelMap = {
-      'seedance-2-0': 'doubao-seedance-2-0-260128',
-      'seedance-2-0-fast': 'doubao-seedance-2-0-fast-260128',
+      'seedance-2-0': 'doubao-seedance-2-0-250612',
+      'seedance-2-0-fast': 'doubao-seedance-2-0-fast-250612',
       'kling-v1-5': 'kling-v1-5',
       'minimax-m2-5': 'minimax-m2.5'
     };
@@ -825,9 +1031,17 @@ router.post('/seedance/generate', authMiddleware, async (req, res) => {
       model: apiModel,
       content: contentArr,
       duration: parseInt(duration) || 5,
-      ratio: ratio || '16:9',
+      ratio: ratio || 'adaptive',
       generate_audio: true
     };
+    
+    // Add resolution if provided (only for Seedance 2.0 and 1.5 pro)
+    if (resolution && (apiModel.includes('seedance'))) {
+      body.resolution = resolution;
+    }
+    
+    // Add watermark false by default
+    body.watermark = false;
 
     const resp = await fetch(`${ZHIZENGZENG_BASE_URL}/bytedance/api/v3/contents/generations/tasks`, {
       method: 'POST',
@@ -950,9 +1164,9 @@ router.post('/admin/add-balance', authMiddleware, (req, res) => {
   try {
     const db = req.app.locals.db;
 
-    // Check if requester is admin (phone: 13800000000)
+    // Check if requester is admin
     const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
-    if (!admin || admin.phone !== '17121734984') {
+    if (!admin || !admin.is_admin) {
       return res.status(403).json({ error: '权限不足' });
     }
 
@@ -988,7 +1202,7 @@ router.get('/admin/users', authMiddleware, (req, res) => {
     const db = req.app.locals.db;
 
     const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
-    if (!admin || admin.phone !== '17121734984') {
+    if (!admin || !admin.is_admin) {
       return res.status(403).json({ error: '权限不足' });
     }
 
@@ -1011,7 +1225,7 @@ router.get('/admin/generations', authMiddleware, (req, res) => {
   try {
     const db = req.app.locals.db;
     const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
-    if (!admin || admin.phone !== '17121734984') {
+    if (!admin || !admin.is_admin) {
       return res.status(403).json({ error: '权限不足' });
     }
 
@@ -1048,7 +1262,7 @@ router.delete('/admin/generations/:id', authMiddleware, (req, res) => {
   try {
     const db = req.app.locals.db;
     const admin = db.prepare('SELECT * FROM ai_users WHERE id = ?').get(req.userId);
-    if (!admin || admin.phone !== '17121734984') {
+    if (!admin || !admin.is_admin) {
       return res.status(403).json({ error: '权限不足' });
     }
 
@@ -1067,446 +1281,271 @@ router.delete('/admin/generations/:id', authMiddleware, (req, res) => {
 });
 
 
-// APIYI 已移除，余额监控统一使用智增增(/zhizengzeng/balance)
 
 
-// === Zhizengzeng Balance Monitoring ===
-const ZHIZENGZENG_BALANCE_URL = 'https://api.zhizengzeng.com/v1/dashboard/billing/credit_grants';
-const ZZ_LOW_BALANCE_THRESHOLD_CNY = 20;
+// === 智增增 API 代理（Gemini 专用，保留原有配置）===
+const ZZ_API_KEY = 'sk-zk21a2660d7104b3c7cc3ad7404326f5a3a6a22b4daacfbc';
+const ZZ_BASE_URL = 'https://api.zhizengzeng.com';
 
-let zhizengzengBalanceCache = { amount: null, lastCheck: null, error: null };
+// === api2.aigcbest.top 代理（图像生成，OpenAI 兼容格式）===
+const AIGCBEST_API_KEY = 'sk-RL3e5gM2Y9lGy2nlDjLEq8MFdwfF9qEvzsyOfAQGYkvGDXzE';
+const AIGCBEST_BASE_URL = 'https://api2.aigcbest.top';
 
-async function checkZhizengzengBalance() {
+// 图像生成代理：转发到 api2.aigcbest.top（OpenAI /v1/images/generations 兼容格式）
+// API Key 存在服务器，前端不直接接触，保障安全
+router.all('/proxy/zz/openai', authMiddleware, async (req, res) => {
   try {
-    const resp = await fetch(ZHIZENGZENG_BALANCE_URL, {
+    const targetPath = req.query.path || '/v1/images/generations';
+    const url = `${AIGCBEST_BASE_URL}${targetPath}`;
+
+    const headers = {
+      'Authorization': `Bearer ${AIGCBEST_API_KEY}`,
+      'Content-Type': 'application/json'
+    };
+
+    const options = {
+      method: req.method,
+      headers
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      options.body = JSON.stringify(req.body);
+    }
+
+    console.log('[AIGCBEST] Proxy ->', targetPath, 'model:', req.body?.model || 'unknown');
+
+    const resp = await fetch(url, options);
+    const data = await resp.json();
+
+    if (data.error) {
+      console.error('[AIGCBEST] API error:', JSON.stringify(data.error).substring(0, 300));
+    }
+
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('[AIGCBEST] proxy error:', err.message);
+    res.status(502).json({ error: { message: '代理请求失败: ' + err.message } });
+  }
+});
+
+// Proxy for Gemini models (uses Google native API format: https://api.zhizengzeng.com/google)
+router.all('/proxy/zz/gemini', authMiddleware, async (req, res) => {
+  try {
+    const model = req.query.model || 'gemini-2.5-flash-image';
+    const action = req.query.action || 'generateContent';
+    const url = `${ZZ_BASE_URL}/google/v1beta/models/${model}:${action}`;
+    
+    const headers = {
+      'X-goog-api-key': ZZ_API_KEY,
+      'Content-Type': 'application/json'
+    };
+    
+    const options = { method: req.method, headers };
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      options.body = JSON.stringify(req.body);
+    }
+    
+    const resp = await fetch(url, options);
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('Gemini proxy error:', err.message);
+    res.status(502).json({ error: '代理请求失败: ' + err.message });
+  }
+});
+
+// 智增增余额查询
+router.get('/zhizengzeng/balance', async (req, res) => {
+  try {
+    const resp = await fetch(`${ZZ_BASE_URL}/v1/dashboard/billing/credit_grants`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': 'Bearer ' + ZZ_API_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+    const data = await resp.json();
+    res.json(data);
+  } catch (err) {
+    console.error('ZZ balance error:', err.message);
+    res.status(502).json({ error: '查询失败' });
+  }
+});
+
+// === 字节豆包视频生成代理（火山引擎，通过智增增转发）===
+// 官方文档: https://doc.zhizengzeng.com/doc-7974572
+// 创建任务: POST /bytedance/api/v3/contents/generations/tasks
+// 查询任务: GET  /bytedance/api/v3/contents/generations/tasks/{id}
+
+// 创建字节豆包视频生成任务
+router.post('/proxy/bytedance/video', authMiddleware, async (req, res) => {
+  try {
+    const url = `${ZZ_BASE_URL}/bytedance/api/v3/contents/generations/tasks`;
+
+    const headers = {
+      'Authorization': `Bearer ${ZZ_API_KEY}`,
+      'Content-Type': 'application/json'
+    };
+
+    console.log('[BYTEDANCE-VIDEO] Create task, body:', JSON.stringify(req.body).substring(0, 300));
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(req.body)
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      console.error('[BYTEDANCE-VIDEO] API error:', JSON.stringify(data).substring(0, 400));
+    } else {
+      console.log('[BYTEDANCE-VIDEO] Task created, id:', data.id || data.task_id || 'unknown');
+    }
+
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('[BYTEDANCE-VIDEO] create error:', err.message);
+    res.status(502).json({ error: '请求失败: ' + err.message });
+  }
+});
+
+// 查询字节豆包视频生成任务状态
+router.get('/proxy/bytedance/video/:id', authMiddleware, async (req, res) => {
+  try {
+    const url = `${ZZ_BASE_URL}/bytedance/api/v3/contents/generations/tasks/${req.params.id}`;
+
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${ZZ_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      console.error('[BYTEDANCE-VIDEO] status error:', JSON.stringify(data).substring(0, 300));
+    }
+
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('[BYTEDANCE-VIDEO] status error:', err.message);
+    res.status(502).json({ error: '查询失败: ' + err.message });
+  }
+});
+
+// === Suno 音乐生成代理 ===
+// 提交音乐生成任务
+router.post('/proxy/aigcbest/suno/submit', authMiddleware, async (req, res) => {
+  try {
+    const url = `${AIGCBEST_BASE_URL}/suno/submit/music`;
+    console.log('[SUNO] Submit music, body:', JSON.stringify(req.body).substring(0, 300));
+
+    const resp = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY,
+        'Authorization': `Bearer ${AIGCBEST_API_KEY}`,
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(req.body)
+    });
+    const data = await resp.json();
+
+    if (!resp.ok || data.code !== 'success') {
+      console.error('[SUNO] API error:', JSON.stringify(data).substring(0, 400));
+    } else {
+      console.log('[SUNO] Task submitted, id:', data.data);
+    }
+
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('[SUNO] submit error:', err.message);
+    res.status(502).json({ error: '请求失败: ' + err.message });
+  }
+});
+
+// 查询音乐生成结果
+router.get('/proxy/aigcbest/suno/feed/:id', authMiddleware, async (req, res) => {
+  try {
+    const url = `${AIGCBEST_BASE_URL}/suno/feed/${req.params.id}`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${AIGCBEST_API_KEY}`,
         'Accept': 'application/json'
       }
     });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    if (data.code !== 0) throw new Error(data.msg || 'API error');
-
-    zhizengzengBalanceCache = {
-      amount: parseFloat(data.grants.available_amount),
-      lastCheck: new Date().toISOString(),
-      error: null
-    };
-
-    if (zhizengzengBalanceCache.amount < ZZ_LOW_BALANCE_THRESHOLD_CNY) {
-      console.log('[ZZ WARNING] Balance low: ¥' + zhizengzengBalanceCache.amount + ' CNY (threshold: ¥' + ZZ_LOW_BALANCE_THRESHOLD_CNY + ')');
-    }
-
-    return zhizengzengBalanceCache;
-  } catch (e) {
-    console.error('[ZZ] Balance check error:', e.message);
-    zhizengzengBalanceCache.error = e.message;
-    zhizengzengBalanceCache.lastCheck = new Date().toISOString();
-    return zhizengzengBalanceCache;
-  }
-}
-
-// Check every hour
-setInterval(checkZhizengzengBalance, 60 * 60 * 1000);
-setTimeout(checkZhizengzengBalance, 12000);
-
-router.get('/zhizengzeng/balance', async (req, res) => {
-  const cacheAge = zhizengzengBalanceCache.lastCheck ? (Date.now() - new Date(zhizengzengBalanceCache.lastCheck).getTime()) : Infinity;
-  if (!zhizengzengBalanceCache.lastCheck || cacheAge > 5 * 60 * 1000) {
-    await checkZhizengzengBalance();
-  }
-  res.json({
-    ...zhizengzengBalanceCache,
-    lowBalance: zhizengzengBalanceCache.amount !== null && zhizengzengBalanceCache.amount < ZZ_LOW_BALANCE_THRESHOLD_CNY,
-    threshold: ZZ_LOW_BALANCE_THRESHOLD_CNY
-  });
-});
-
-
-// === API Proxy (hide keys from frontend) ===
-// Reuses ZHIZENGZENG_API_KEY and ZHIZENGZENG_BASE_URL defined above for Seedance
-// 通道已切换到智增增(ZHIZENGZENG)，不再使用APIYI
-
-async function _proxyFetch(targetUrl, reqBody, extraHeaders) {
-  const fetchOpts = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...extraHeaders },
-    body: typeof reqBody === 'string' ? reqBody : JSON.stringify(reqBody)
-  };
-  const resp = await fetch(targetUrl, fetchOpts);
-  const ct = resp.headers.get('content-type') || '';
-  if (ct.includes('application/json')) {
-    return { status: resp.status, body: await resp.json() };
-  }
-  return { status: resp.status, body: await resp.text() };
-}
-
-// Proxy: Zhizengzeng OpenAI images
-router.post('/proxy/zz/openai', async (req, res) => {
-  try {
-    const path = req.query.path || '/v1/images/generations';
-    const result = await _proxyFetch(ZHIZENGZENG_BASE_URL + path, req.body, {
-      'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY
-    });
-    res.status(result.status).json(result.body);
-  } catch (e) {
-    console.error('[Proxy ZZ OpenAI]', e.message);
-    res.status(500).json({ error: 'Proxy error' });
+    res.status(resp.status).json(data);
+  } catch (err) {
+    console.error('[SUNO] feed error:', err.message);
+    res.status(502).json({ error: '查询失败: ' + err.message });
   }
 });
 
-// Proxy: Zhizengzeng Gemini
-router.post('/proxy/zz/gemini', async (req, res) => {
+// === TTS 文本转语音代理 ===
+router.post('/proxy/aigcbest/tts', authMiddleware, async (req, res) => {
   try {
-    const model = req.query.model;
-    const action = req.query.action || 'generateContent';
-    const url = ZHIZENGZENG_BASE_URL + '/google/v1beta/models/' + model + ':' + action;
+    const url = `${AIGCBEST_BASE_URL}/v1/audio/speech`;
+    console.log('[TTS] Request, model:', req.body?.model, 'voice:', req.body?.voice);
+
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-goog-api-key': ZHIZENGZENG_API_KEY },
+      headers: {
+        'Authorization': `Bearer ${AIGCBEST_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(req.body)
     });
-    res.status(resp.status).json(await resp.json());
-  } catch (e) {
-    console.error('[Proxy ZZ Gemini]', e.message);
-    res.status(500).json({ error: 'Proxy error' });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('[TTS] API error:', errText.substring(0, 300));
+      res.status(resp.status).json({ error: JSON.parse(errText).error || 'TTS 请求失败' });
+      return;
+    }
+
+    // Return audio binary directly
+    const contentType = resp.headers.get('content-type') || 'audio/mpeg';
+    res.setHeader('Content-Type', contentType);
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    res.send(buffer);
+  } catch (err) {
+    console.error('[TTS] error:', err.message);
+    res.status(502).json({ error: 'TTS 请求失败: ' + err.message });
   }
 });
 
-// Proxy: APIYI images/generations
-router.post('/proxy/apiyi/images', async (req, res) => {
+// === STT 语音转文字代理 ===
+router.post('/proxy/aigcbest/stt', authMiddleware, upload.single('file'), async (req, res) => {
   try {
-    const result = await _proxyFetch(ZHIZENGZENG_BASE_URL + '/v1/images/generations', req.body, {
-      'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY
-    });
-    res.status(result.status).json(result.body);
-  } catch (e) {
-    console.error('[Proxy APIYI Images]', e.message);
-    res.status(500).json({ error: 'Proxy error' });
-  }
-});
+    const url = `${AIGCBEST_BASE_URL}/v1/audio/transcriptions`;
+    console.log('[STT] Request received');
 
-// Proxy: APIYI images/edits (converts JSON image URLs to multipart/form-data)
-router.post('/proxy/apiyi/edits', async (req, res) => {
-  try {
-    const body = req.body;
-    // If body has images array with image_url objects, convert to multipart
-    if (body.images && Array.isArray(body.images) && body.images[0] && body.images[0].image_url) {
-      // Build multipart/form-data manually for reliability
-      const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
-      const parts = [];
-      const addField = (name, value) => {
-        parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + name + '"\r\n\r\n' + value + '\r\n'));
-      };
-      addField('model', body.model || 'gpt-image-2');
-      addField('prompt', body.prompt || '');
-      if (body.n) addField('n', String(body.n));
-      if (body.size) addField('size', body.size);
-      if (body.quality) addField('quality', body.quality);
-      // Download each image and append as file part
-      for (let i = 0; i < body.images.length; i++) {
-        const imgUrl = body.images[i].image_url;
-        const imgResp = await fetch(imgUrl);
-        if (!imgResp.ok) throw new Error('Failed to download image: ' + imgUrl);
-        const imgBuf = Buffer.from(await imgResp.arrayBuffer());
-        const ct = imgResp.headers.get('content-type') || 'image/png';
-        parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="image"; filename="image' + i + '.png"\r\nContent-Type: ' + ct + '\r\n\r\n'));
-        parts.push(imgBuf);
-        parts.push(Buffer.from('\r\n'));
-      }
-      parts.push(Buffer.from('--' + boundary + '--\r\n'));
-      const formBuffer = Buffer.concat(parts);
-      // Use https module for reliable multipart upload
-      const https = require('https');
-      const urlObj = new URL(ZHIZENGZENG_BASE_URL + '/v1/images/edits');
-      const httpsResult = await new Promise((resolve, reject) => {
-        const req = https.request({
-          hostname: urlObj.hostname,
-          port: urlObj.port || 443,
-          path: urlObj.pathname,
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY,
-            'Content-Type': 'multipart/form-data; boundary=' + boundary,
-            'Content-Length': formBuffer.length
-          }
-        }, (resp) => {
-          const chunks = [];
-          resp.on('data', c => chunks.push(c));
-          resp.on('end', () => {
-            const raw = Buffer.concat(chunks).toString();
-            let parsed;
-            try { parsed = JSON.parse(raw); } catch(e) { parsed = { error: raw }; }
-            resolve({ status: resp.statusCode, body: parsed });
-          });
-        });
-        req.on('error', reject);
-        req.write(formBuffer);
-        req.end();
-      });
-      res.status(httpsResult.status).json(httpsResult.body);
-    } else {
-      // Fallback: pass through as JSON
-      const result = await _proxyFetch(ZHIZENGZENG_BASE_URL + '/v1/images/edits', body, {
-        'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY
-      });
-      res.status(result.status).json(result.body);
+    // Forward multipart form data
+    const formData = new FormData();
+    if (req.file) {
+      formData.append('file', new Blob([req.file.buffer]), req.file.originalname);
     }
-  } catch (e) {
-    console.error('[Proxy APIYI Edits]', e.message);
-    res.status(500).json({ error: 'Proxy error: ' + e.message });
-  }
-});
+    if (req.body.model) formData.append('model', req.body.model);
+    if (req.body.language) formData.append('language', req.body.language);
+    if (req.body.response_format) formData.append('response_format', req.body.response_format);
+    if (req.body.prompt) formData.append('prompt', req.body.prompt);
 
-// APIYI Gemini route removed - use /proxy/zz/gemini instead
-
-// Proxy: APIYI chat/completions (supports streaming)
-router.post('/proxy/apiyi/chat', async (req, res) => {
-  try {
-    const isStream = req.body.stream === true;
-
-    if (isStream) {
-      // Streaming: pipe response directly to client
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-
-      const upstream = await fetch(ZHIZENGZENG_BASE_URL + '/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY
-        },
-        body: JSON.stringify(req.body)
-      });
-
-      if (!upstream.ok) {
-        const errText = await upstream.text();
-        console.error('[Proxy APIYI Chat Stream] Error:', upstream.status, errText);
-        res.status(upstream.status).end(errText);
-        return;
-      }
-
-      const reader = upstream.body.getReader();
-      const decoder = new TextDecoder();
-
-      const pump = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) { res.end(); break; }
-          const chunk = decoder.decode(value, { stream: true });
-          res.write(chunk);
-        }
-      };
-      await pump();
-    } else {
-      // Non-streaming: use normal proxy
-      const result = await _proxyFetch(ZHIZENGZENG_BASE_URL + '/v1/chat/completions', req.body, {
-        'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY
-      });
-      res.status(result.status).json(result.body);
-    }
-  } catch (e) {
-    console.error('[Proxy APIYI Chat]', e.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Proxy error' });
-    } else {
-      res.end();
-    }
-  }
-});
-
-
-// === Image Hosting for i2i reference images ===
-router.post('/host-image', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No image file' });
-    const COS = require('cos-nodejs-sdk-v5');
-    const bucket = process.env.R2_BUCKET || '';
-    const region = process.env.COS_REGION || 'ap-hongkong';
-    if (!bucket || !process.env.R2_ACCESS_KEY_ID) {
-      return res.status(500).json({ error: 'Storage not configured' });
-    }
-    const cosClient = new COS({
-      SecretId: process.env.R2_ACCESS_KEY_ID,
-      SecretKey: process.env.R2_SECRET_ACCESS_KEY
-    });
-    const key = 'ai-temp/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.png';
-    cosClient.putObject({
-      Bucket: bucket,
-      Region: region,
-      Key: key,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype || 'image/png'
-    }, (err) => {
-      if (err) {
-        console.error('[Host Image] COS upload error:', err.message);
-        return res.status(500).json({ error: 'Upload failed' });
-      }
-      const url = `https://${bucket}.cos.${region}.myqcloud.com/${key}`;
-      console.log('[Host Image] Uploaded:', url);
-      res.json({ url });
-    });
-  } catch (e) {
-    console.error('[Host Image] Error:', e.message);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-
-
-
-// === WAN 万相 多视角：使用次数追踪（每帳號8次免費，每次1張） ===
-const WAN_FREE_LIMIT = 8;
-const WAN_USAGE_FILE = __dirname + '/data/wan_usage.json';
-const fs = require('fs');
-
-function loadWanUsage() {
-  try {
-    if (fs.existsSync(WAN_USAGE_FILE)) {
-      return JSON.parse(fs.readFileSync(WAN_USAGE_FILE, 'utf8'));
-    }
-  } catch(e) { console.error('[WAN] Load usage error:', e.message); }
-  return {};
-}
-
-function saveWanUsage(usage) {
-  try {
-    fs.writeFileSync(WAN_USAGE_FILE, JSON.stringify(usage, null, 2));
-  } catch(e) { console.error('[WAN] Save usage error:', e.message); }
-}
-
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-function getUserWanUsage(username) {
-  const usage = loadWanUsage();
-  const user = usage[username];
-  if (!user || user.date !== getTodayKey()) return 0;
-  return user.count || 0;
-}
-
-function incrementUserWanUsage(username) {
-  const usage = loadWanUsage();
-  const today = getTodayKey();
-  if (!usage[username] || usage[username].date !== today) {
-    usage[username] = { date: today, count: 1 };
-  } else {
-    usage[username].count += 1;
-  }
-  saveWanUsage(usage);
-  return usage[username].count;
-}
-
-// === WAN 万相 多视角图片生成 (via 智增增 阿里千问接口) ===
-const WAN_BASE_URL = 'https://api.zhizengzeng.com/alibaba/api/v1';
-
-// Simple username auth middleware for WAN (uses main site auth)
-function wanAuthMiddleware(req, res, next) {
-  const username = req.headers['x-username'] || req.query.user;
-  if (!username) {
-    return res.status(401).json({ error: '请先登录' });
-  }
-  req.wanUser = username;
-  next();
-}
-
-
-// 查询 WAN 使用次数
-router.get('/wan/usage', wanAuthMiddleware, (req, res) => {
-  const usedCount = getUserWanUsage(req.wanUser);
-  res.json({ used: usedCount, limit: WAN_FREE_LIMIT, remaining: Math.max(0, WAN_FREE_LIMIT - usedCount) });
-});
-
-// Generate WAN multi-view images (synchronous - returns results directly)
-router.post('/wan/generate', wanAuthMiddleware, async (req, res) => {
-  try {
-    const { prompt, image_url, model, n, size, enable_sequential, seed } = req.body;
-    if (!prompt) {
-      return res.status(400).json({ error: '缺少提示词' });
-    }
-
-    // 检查免费次数（每帳號8次，每次1張）
-    const username = req.wanUser;
-    const usedCount = getUserWanUsage(username);
-    if (usedCount >= WAN_FREE_LIMIT) {
-      return res.status(403).json({ error: '免费次数已用完（共' + WAN_FREE_LIMIT + '次），如需继续使用请联系客服' });
-    }
-
-    const apiModel = model || 'wan2.7-image';
-    const contentArr = [];
-
-    // Add reference image if provided
-    if (image_url) {
-      contentArr.push({ image: image_url });
-    }
-    contentArr.push({ text: prompt });
-
-    const body = {
-      model: apiModel,
-      input: {
-        messages: [
-          {
-            role: 'user',
-            content: contentArr
-          }
-        ]
-      },
-      parameters: {
-        size: size || '1K',
-        n: 1, // 固定1張
-        watermark: false,
-        enable_sequential: false
-      }
-    };
-
-    if (seed) {
-      body.parameters.seed = parseInt(seed);
-    }
-
-    console.log('[WAN] Generate, model:', apiModel, 'n:', body.parameters.n, 'user:', req.wanUser);
-
-    const resp = await fetch(WAN_BASE_URL + '/services/aigc/multimodal-generation/generation', {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + ZHIZENGZENG_API_KEY
+        'Authorization': `Bearer ${AIGCBEST_API_KEY}`
       },
-      body: JSON.stringify(body),
-      timeout: 180000
+      body: formData
     });
-
     const data = await resp.json();
-    if (!resp.ok) {
-      console.error('[WAN] Generate error:', data);
-      return res.status(resp.status).json({ error: data.message || data.error?.message || '生成失败' });
-    }
-
-    // Extract image URLs from response
-    const images = [];
-    const choices = data.output?.choices || [];
-    choices.forEach(choice => {
-      const content = choice.message?.content || [];
-      content.forEach(item => {
-        if (item.image) images.push(item.image);
-      });
-    });
-
-    // 记录使用次数
-    const newCount = incrementUserWanUsage(username);
-    console.log('[WAN] Success, 1 image for user:', username, '(used', newCount + '/' + WAN_FREE_LIMIT + ')');
-    res.json({ success: true, images, usage: data.usage, wanUsage: { used: newCount, limit: WAN_FREE_LIMIT, remaining: WAN_FREE_LIMIT - newCount } });
+    res.status(resp.status).json(data);
   } catch (err) {
-    console.error('[WAN] Generate error:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[STT] error:', err.message);
+    res.status(502).json({ error: 'STT 请求失败: ' + err.message });
   }
 });
 
-
 module.exports = { router, initTables };
-

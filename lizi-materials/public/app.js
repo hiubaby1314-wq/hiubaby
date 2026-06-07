@@ -37,12 +37,9 @@
     let currentPage = 1;
         const perPage = 10;
 
-    // Try to restore session from localStorage
+    // Try to restore session from localStorage (with token)
     try {
-      const saved = localStorage.getItem('lz_user');
-      if (saved) {
-        currentUser = JSON.parse(saved);
-      }
+      currentUser = (typeof getStoredUser === 'function') ? getStoredUser() : JSON.parse(localStorage.getItem('lz_user'));
     } catch(e) {}
 
     // ===== AI MAINTENANCE CONTROL =====
@@ -100,7 +97,8 @@
     }
 
     function handleAiClick() {
-      if (aiMaintenanceMode) {
+      const _isAdmin = currentUser && currentUser.role === "admin";
+      if (aiMaintenanceMode && !_isAdmin) {
         alert("🔧 栗子AI生图系统维护中，请稍后再试！");
         return;
       }
@@ -650,8 +648,11 @@
     }
     
     function doLogout() {
+      // Call server to invalidate token
+      fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).catch(function() {});
       currentUser = null;
-      try { localStorage.removeItem('lz_user'); } catch(e) {}
+      if (typeof clearAuthUser === 'function') { clearAuthUser(); }
+      else { try { localStorage.removeItem('lz_user'); } catch(e) {} }
       updateUserBar();
       renderCards();
     }
@@ -961,10 +962,10 @@
       const vidFiles = (m.uploadedFiles||[]).filter(f => /\.(mp4|webm|mov|avi|mkv)$/i.test(f.ext || f.name || ''));
 
       if (imgFiles.length > 0) {
-        previewEl.innerHTML = '<img src="'+imgFiles[0].path+'" alt="'+m.name+'" style="max-width:100%;max-height:60vh;object-fit:contain;" oncontextmenu="return false" ondragstart="return false">';
+        previewEl.innerHTML = '<img src="'+imgFiles[0].path+'" alt="'+m.name+'" style="max-width:100%;max-height:85vh;object-fit:contain;" oncontextmenu="return false" ondragstart="return false">';
         previewEl.style.background = 'none';
       } else if (vidFiles.length > 0) {
-        previewEl.innerHTML = '<video src="'+vidFiles[0].path+'" controls playsinline preload="metadata" style="max-width:100%;max-height:60vh;object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
+        previewEl.innerHTML = '<video src="'+vidFiles[0].path+'" controls playsinline preload="metadata" style="max-width:100%;max-height:85vh;object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
         previewEl.style.background = '#000';
       } else {
         previewEl.innerHTML = '';
@@ -983,7 +984,7 @@
           t.onclick = function() {
             document.querySelectorAll('.preview-thumb').forEach(x => x.classList.remove('active'));
             t.classList.add('active');
-            previewEl.innerHTML = '<img src="'+img.path+'" alt="'+m.name+'" style="max-width:100%;max-height:60vh;object-fit:contain;" oncontextmenu="return false" ondragstart="return false">';
+            previewEl.innerHTML = '<img src="'+img.path+'" alt="'+m.name+'" style="max-width:100%;max-height:85vh;object-fit:contain;" oncontextmenu="return false" ondragstart="return false">';
             previewEl.style.background = 'none';
           };
           thumbs.appendChild(t);
@@ -997,7 +998,7 @@
           t.onclick = function() {
             document.querySelectorAll('.preview-thumb').forEach(x => x.classList.remove('active'));
             t.classList.add('active');
-            previewEl.innerHTML = '<video src="'+vid.path+'" controls playsinline preload="metadata" style="max-width:100%;max-height:60vh;object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
+            previewEl.innerHTML = '<video src="'+vid.path+'" controls playsinline preload="metadata" style="max-width:100%;max-height:85vh;object-fit:contain;background:#000;" oncontextmenu="return false"></video>';
             previewEl.style.background = '#000';
           };
           thumbs.appendChild(t);
@@ -1323,24 +1324,26 @@
       const msg = document.getElementById('loginMsg');
       if (!username || !password) { msg.textContent = '请输入用户名和密码'; msg.className = 'modal-msg error'; return; }
       let d = await apiLogin(username, password);
-      // If server rejects password, check localStorage fallback
-      if (!d.ok) {
-        try {
-          const saved = JSON.parse(localStorage.getItem('lz_passwords') || '{}');
-          if (saved[username] && saved[username] === password) {
-            d = { ok: true, user: { username, role: 'user' } };
-          }
-        } catch(e) {}
-      }
       if (!d.ok) { msg.textContent = d.error || '登录失败'; msg.className = 'modal-msg error'; return; }
       currentUser = d.user;
-      try { localStorage.setItem('lz_user', JSON.stringify(currentUser)); } catch(e) {}
+      // Store token for auth
+      if (typeof setAuthUser === 'function') {
+        setAuthUser(currentUser, d.token);
+      } else {
+        currentUser.token = d.token;
+        try { localStorage.setItem('lz_user', JSON.stringify(currentUser)); } catch(e) {}
+      }
       msg.textContent = '登录成功！';
       msg.className = 'modal-msg';
       updateUserBar();
       setTimeout(() => {
         document.getElementById('loginModal').classList.remove('active');
         renderCards();
+        // Check if force password change is required
+        if (d.forcePwdChange) {
+          alert('请修改默认密码后再继续使用');
+          openChangePwd();
+        }
       }, 500);
     });
 
@@ -1353,7 +1356,7 @@
       if (!username) { msg.textContent = '请输入用户名'; msg.style.color = '#ef4444'; return; }
       const d = await apiAddUser(username, role);
       if (!d.ok) { msg.textContent = d.error; msg.style.color = '#ef4444'; return; }
-      msg.textContent = '用户 "'+username+'" 已创建，默认密码 123456';
+      msg.textContent = '用户 "'+username+'" 已创建，临时密码: ' + (d.tempPassword || '请查看控制台') + '（请通知用户首次登录后修改密码）';
       msg.style.color = '#10b981';
       document.getElementById('adminNewUser').value = '';
       renderAdminUsers();
@@ -1788,7 +1791,7 @@
 
     updateUserBar();
     loadMaterials();
-    // Try to auto-login if there's a saved session with password
+    // Try to auto-login if there's a saved session with password (legacy fallback)
     (async function autoLogin() {
       if (!currentUser) return;
       try {
@@ -1798,7 +1801,12 @@
           const d = await apiLogin(currentUser.username, pwd);
           if (d.ok) {
             currentUser = d.user;
-            try { localStorage.setItem('lz_user', JSON.stringify(currentUser)); } catch(e) {}
+            if (typeof setAuthUser === 'function') {
+              setAuthUser(currentUser, d.token);
+            } else {
+              currentUser.token = d.token;
+              try { localStorage.setItem('lz_user', JSON.stringify(currentUser)); } catch(e) {}
+            }
             updateUserBar();
           }
         }
@@ -1827,6 +1835,17 @@
 
     // === App Popup ===
     function openAppPopup(url, title) {
+      // 配音和聊天功能需要登录
+      if (url.includes("/voice/") && !currentUser) {
+        showToast("请先登录后再使用配音功能");
+        openLogin();
+        return;
+      }
+      if (url.includes("/chat/") && !currentUser) {
+        showToast("请先登录后再使用AI聊天");
+        openLogin();
+        return;
+      }
       // 检查是否是 AI 生图功能（维护中，管理员不受影响）
       const _isAdmin = currentUser && currentUser.role === 'admin';
       if (url.includes('/ai-image') && aiMaintenanceMode && !_isAdmin) {
@@ -1877,7 +1896,7 @@
               <span id="appPopupTitle"></span>
               <button onclick="closeAppPopup()" title="關閉">✕</button>
             </div>
-            <iframe id="appPopupIframe" allow="clipboard-write; microphone"></iframe>
+            <iframe id="appPopupIframe" allow="clipboard-write; microphone; autoplay"></iframe>
             <div id="watermarkCover" style="display:none;position:absolute;bottom:0;right:0;width:220px;height:36px;z-index:99999;pointer-events:none;background:#fff;border-radius:8px 0 0 0;"></div>
           </div>
         `;
@@ -1907,36 +1926,3 @@
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') closeAppPopup();
     });
-// 小說下載下拉菜單
-function toggleNovelDropdown() {
-  const dropdown = document.getElementById('novelDropdown') || document.getElementById('novelDropdownLogin');
-  if (dropdown) {
-    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-  }
-}
-
-// 點擊外部關閉下拉菜單
-document.addEventListener('click', function(e) {
-  const dropdowns = ['novelDropdown', 'novelDropdownLogin'];
-  const btn = e.target.closest('button[onclick*="toggleNovelDropdown"]');
-  if (!btn) {
-    dropdowns.forEach(id => {
-      const dropdown = document.getElementById(id);
-      if (dropdown && !e.target.closest('#' + id)) {
-        dropdown.style.display = 'none';
-      }
-    });
-  }
-});
-
-// 打开番茄/七猫下载器工具（隐藏URL）
-function openFanqieTool() {
-  const url = atob('aHR0cHM6Ly82MmozZ3h0ei5tdWxlLnBhZ2Uv');
-  window.open(url, '_blank');
-}
-
-// 打开小说工具（隐藏URL）
-function openNovelTool() {
-  const url = atob('aHR0cHM6Ly9zYy5vMy5oay8=');
-  window.open(url, '_blank');
-}
