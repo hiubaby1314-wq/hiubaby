@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>栗子AI生图 - 价格表</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans SC',sans-serif; background:#0e0e11; color:#e8e6e1; min-height:100vh; padding:2rem; }
+  .container { max-width:960px; margin:0 auto; }
+  h1 { text-align:center; font-size:1.8rem; color:#d4a853; margin-bottom:.5rem; }
+  .subtitle { text-align:center; color:#9e9b94; font-size:.9rem; margin-bottom:2rem; }
+  .table-wrap { background:#16161b; border:1px solid #2a2a35; border-radius:12px; overflow:hidden; margin-bottom:1.5rem; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { background:#1e1e25; padding:.8rem 1rem; text-align:left; font-weight:600; font-size:.82rem; color:#d4a853; border-bottom:2px solid #2a2a35; }
+  thead th:nth-child(n+3) { text-align:center; }
+  tbody td { padding:.7rem 1rem; border-bottom:1px solid #2a2a35; font-size:.85rem; }
+  tbody tr:last-child td { border-bottom:none; }
+  tbody tr:hover { background:rgba(212,168,83,.04); }
+  .model-name { font-weight:500; }
+  .badge { display:inline-block; padding:.12rem .45rem; border-radius:4px; font-size:.68rem; font-weight:600; margin-left:.3rem; }
+  .badge-hot { background:rgba(232,93,93,.15); color:#e85d5d; border:1px solid rgba(232,93,93,.3); }
+  .badge-free { background:rgba(93,186,125,.15); color:#5dba7d; border:1px solid rgba(93,186,125,.3); }
+  .badge-new { background:rgba(99,102,241,.15); color:#818cf8; border:1px solid rgba(99,102,241,.3); }
+  .badge-best { background:rgba(212,168,83,.15); color:#d4a853; border:1px solid rgba(212,168,83,.3); }
+  .badge-cheap { background:rgba(93,186,125,.15); color:#5dba7d; border:1px solid rgba(93,186,125,.3); }
+  .price { font-weight:700; color:#d4a853; font-size:.95rem; }
+  .price-range { color:#d4a853; font-size:.85rem; }
+  .cost { color:#9e9b94; font-size:.75rem; }
+  td:nth-child(n+3) { text-align:center; }
+  .free-tag { color:#5dba7d; font-weight:600; font-size:.95rem; }
+  .group-header td { background:#1e1e25; color:#9e9b94; font-size:.72rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:.45rem 1rem; }
+  .quality-label { color:#9e9b94; font-size:.78rem; }
+  .note { margin-top:1rem; padding:1rem 1.2rem; background:#16161b; border:1px solid #2a2a35; border-radius:10px; font-size:.8rem; color:#9e9b94; line-height:1.8; }
+  .note strong { color:#d4a853; }
+  .footer { text-align:center; margin-top:2rem; color:#2a2a35; font-size:.75rem; }
+  .model-section-title { padding:.6rem 1rem; background:#1a1a22; color:#d4a853; font-size:.78rem; font-weight:600; border-bottom:1px solid #2a2a35; }
+</style>
+
+
+<script>
+(function(){
+  var _0x=['selectstart','contextmenu','copy','cut','dragstart','keydown'];
+  var _0y=[123,73,74,67,67,88,65,83,85];
+  var _d=document,_w=window;
+  _0x.forEach(function(ev){
+    _d.addEventListener(ev,function(e){
+      if(ev===_0x[5]){
+        var k=e.keyCode;
+        if(k===_0y[0])return e.preventDefault();
+        if(e.ctrlKey&&e.shiftKey&&_0y.slice(1,4).indexOf(k)!==-1)return e.preventDefault();
+        if(e.ctrlKey&&_0y.slice(4).indexOf(k)!==-1){
+          if(k===86&&_d.activeElement&&['INPUT','TEXTAREA'].indexOf(_d.activeElement.tagName)!==-1)return;
+          return e.preventDefault();
+        }
+      }else{e.preventDefault()}
+    });
+  });
+  ['log','info','warn','error','debug','clear'].forEach(function(m){
+    if(_w.console)_w.console[m]=function(){}
+  });
+  var _checkDevTools=function(){
+    var threshold=160;
+    if(_w.outerWidth-_w.innerWidth>threshold||_w.outerHeight-_w.innerHeight>threshold){
+      _d.body.style.display='none';
+      setTimeout(function(){_d.body.style.display=''},1000);
+    }
+  };
+  setInterval(_checkDevTools,500);
+  _d.addEventListener('DOMContentLoaded',function(){
+    var scripts=_d.getElementsByTagName('script');
+    for(var i=0;i<scripts.length;i++){
+      if(scripts[i].innerHTML.indexOf('_0x')!==-1){scripts[i].innerHTML=''}
+    }
+  });
+  var _style=_d.createElement('style');
+  _style.textContent='*{-webkit-user-select:none!important;-moz-user-select:none!important;-ms-user-select:none!important;user-select:none!important}input,textarea,select{-webkit-user-select:text!important;-moz-user-select:text!important;-ms-user-select:text!important;user-select:text!important}img{-webkit-user-drag:none!important;pointer-events:none!important}';
+  _d.head.appendChild(_style);
+})();
+</script>
+</head>
+<body>
+<div class="container">
+  <h1>栗子AI生图 · 价格表</h1>
+  <p class="subtitle">按模型 × 品质 × 分辨率计费 · 每次生成一张图 · 单位：人民币（元）</p>
+
+  <!-- GPT Image 1.5 -->
+  <div class="table-wrap">
+    <div class="model-section-title">GPT Image 1.5<span class="badge badge-new">新</span> — 速度提升4倍，文本渲染最强</div>
+    <table>
+      <thead><tr><th>品质</th><th>分辨率</th><th>单价</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="quality-label">Low（快速省钱）</span></td><td>1024×1024</td><td><span class="price">¥0.09</span></td><td rowspan="6">登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="quality-label">Low</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥0.12</span></td><td>★★★☆☆</td></tr>
+        <tr><td><span class="quality-label">Medium（均衡）</span></td><td>1024×1024</td><td><span class="price">¥0.33</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">Medium</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥0.49</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">High（最高画质）</span></td><td>1024×1024</td><td><span class="price">¥1.27</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="quality-label">High</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥1.90</span></td><td>★★★★★</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GPT Image 1 -->
+  <div class="table-wrap">
+    <div class="model-section-title">GPT Image 1<span class="badge badge-hot">推荐</span> — 品质分档定价</div>
+    <table>
+      <thead><tr><th>品质</th><th>分辨率</th><th>单价</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="quality-label">Low（快速省钱）</span></td><td>1024×1024</td><td><span class="price">¥0.11</span></td><td rowspan="6">登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="quality-label">Low</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥0.16</span></td><td>★★★☆☆</td></tr>
+        <tr><td><span class="quality-label">Medium（均衡）</span></td><td>1024×1024</td><td><span class="price">¥0.41</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">Medium</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥0.60</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">High（最高画质）</span></td><td>1024×1024</td><td><span class="price">¥1.59</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="quality-label">High</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥2.37</span></td><td>★★★★★</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GPT Image 1 Mini -->
+  <div class="table-wrap">
+    <div class="model-section-title">GPT Image 1 Mini<span class="badge badge-new">经济</span> — 轻量版</div>
+    <table>
+      <thead><tr><th>品质</th><th>分辨率</th><th>单价</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="quality-label">Low</span></td><td>1024×1024</td><td><span class="price">¥0.06</span></td><td rowspan="4">登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="quality-label">Low</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥0.07</span></td><td>★★★☆☆</td></tr>
+        <tr><td><span class="quality-label">Medium</span></td><td>1024×1024</td><td><span class="price">¥0.11</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">Medium</span></td><td>1536×1024 / 1024×1536</td><td><span class="price">¥0.15</span></td><td>★★★★☆</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- GPT Image 2 -->
+  <div class="table-wrap">
+    <div class="model-section-title">GPT Image 2<span class="badge badge-best">最强</span> — 按 token 计费</div>
+    <table>
+      <thead><tr><th>说明</th><th>单价（估算）</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td>按 output token 计费（30 USD/M tokens），典型生图约 ¥1.00 成本</td><td><span class="price">¥1.30</span></td><td>登录后3次</td><td>★★★★★</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  
+    <table>
+      <thead><tr><th>品质</th><th>分辨率</th><th>单价</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="quality-label">Standard</span></td><td>1024×1024</td><td><span class="price">¥0.38</span></td><td rowspan="4">登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">Standard</span></td><td>1024×1792 / 1792×1024</td><td><span class="price">¥0.76</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="quality-label">HD</span></td><td>1024×1024</td><td><span class="price">¥0.76</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="quality-label">HD</span></td><td>1024×1792 / 1792×1024</td><td><span class="price">¥1.14</span></td><td>★★★★★</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Google Models -->
+  <div class="table-wrap">
+    <div class="model-section-title">Google AI 模型</div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Gemini 2.5 Flash 图像</span></td><td><span class="price">¥0.38</span></td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Imagen 4.0</span></td><td><span class="price">¥0.38</span></td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Imagen 4.0 Ultra</span><span class="badge badge-best">最强</span></td><td><span class="price">¥0.58</span></td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Imagen 4.0 Fast</span><span class="badge badge-cheap">便宜</span></td><td><span class="price">¥0.20</span></td><td>登录后3次</td><td>★★★☆☆</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 超低价模型 -->
+  <div class="table-wrap">
+    <div class="model-section-title">超低价模型<span class="badge badge-cheap">省钱</span></div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Nano Banana 第一代</span><span class="badge badge-cheap">便宜</span></td><td><span class="price">¥0.20</span></td><td>登录后3次</td><td>★★★☆☆</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Nano Banana -->
+  <div class="table-wrap">
+    <div class="model-section-title">Nano Banana 系列<span class="badge badge-hot">热卖</span> — 支持 1K/2K/4K</div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>分辨率</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Nano Banana Pro</span><span class="badge badge-best">最强</span></td><td><span class="price">¥0.85</span></td><td>1K / 2K / 4K</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Nano Banana 2</span><span class="badge badge-hot">热卖</span></td><td><span class="price">¥0.52</span></td><td>0.5K - 4K</td><td>登录后3次</td><td>★★★★★</td></tr>
+      </tbody>
+    </table>
+    <div style="padding:.5rem 1rem;font-size:.75rem;color:#9e9b94;line-height:1.6;">
+      💡 Nano Banana Pro / 2 均按次统一价，<strong style="color:#d4a853;">4K 不加价</strong>，分辨率越高越划算
+    </div>
+  </div>
+
+  <!-- GPT Image 2 官逆 -->
+  <div class="table-wrap">
+    <div class="model-section-title">GPT Image 2 官逆 — 按次统一价</div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>特点</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">GPT Image 2 All</span></td><td><span class="price">¥0.29</span></td><td>官逆 ChatGPT 网页线，30-60s 出图</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">GPT Image 2 VIP</span><span class="badge badge-new">4K</span></td><td><span class="price">¥0.29</span></td><td>官逆 Codex 线，支持 4K，90-150s 出图</td><td>登录后3次</td><td>★★★★☆</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Flux & Seedream -->
+  <div class="table-wrap">
+    <div class="model-section-title">Flux & Seedream 系列</div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>特点</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Flux 2 Klein 4B</span><span class="badge badge-cheap">超低价</span></td><td><span class="price">¥0.12</span></td><td>sub-second 极速出图</td><td>登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Flux 2 Klein 9B</span><span class="badge badge-cheap">超低价</span></td><td><span class="price">¥0.12</span></td><td>sub-second 极速出图</td><td>登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Flux Pro 1.1</span><span class="badge badge-cheap">便宜</span></td><td><span class="price">¥0.43</span></td><td>经典版本</td><td>登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Flux Kontext Pro</span></td><td><span class="price">¥0.43</span></td><td>图像编辑性价比首选</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Flux 2 Pro</span></td><td><span class="price">¥0.47</span></td><td>生产规模性价比</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Flux 2 Flex</span><span class="badge badge-new">文字</span></td><td><span class="price">¥0.73</span></td><td>文字渲染特化</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Flux 2 Max</span><span class="badge badge-best">旗舰</span></td><td><span class="price">¥0.58</span></td><td>4MP 旗舰画质 + 联网搜索</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Flux Kontext Max</span><span class="badge badge-best">编辑</span></td><td><span class="price">¥0.86</span></td><td>编辑最高质量、文字精修</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Seedream 5.0</span><span class="badge badge-cheap">便宜</span></td><td><span class="price">¥0.25</span></td><td>2K / 3K</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Seedream 4.5</span></td><td><span class="price">¥0.29</span></td><td>2K / 4K</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Seedream 4.0</span><span class="badge badge-cheap">便宜</span></td><td><span class="price">¥0.22</span></td><td>2K</td><td>登录后3次</td><td>★★★☆☆</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Image-to-Image Models -->
+  <div class="table-wrap">
+    <div class="model-section-title">图生图模型<span class="badge badge-hot">新</span> — 上传参考图进行编辑</div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>特点</th><th>免费额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Flux 2 Klein 4B 图生图</span><span class="badge badge-cheap">超低价</span></td><td><span class="price">¥0.12</span></td><td>极速编辑，sub-second 出图</td><td>登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Flux 2 Klein 9B 图生图</span><span class="badge badge-cheap">超低价</span></td><td><span class="price">¥0.12</span></td><td>极速编辑，sub-second 出图</td><td>登录后3次</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Flux Kontext Pro 图生图</span><span class="badge badge-hot">性价比</span></td><td><span class="price">¥0.43</span></td><td>图像编辑性价比首选</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">GPT Image 1 图生图</span></td><td><span class="price-range">¥0.11 ~ ¥2.37</span></td><td>按品质/分辨率分档，与文生图同价</td><td>登录后3次</td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">GPT Image 1.5 图生图</span><span class="badge badge-new">新</span></td><td><span class="price-range">¥0.09 ~ ¥1.90</span></td><td>速度提升4倍，文本渲染最强</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">GPT Image 2 图生图</span><span class="badge badge-best">最强</span></td><td><span class="price">¥1.30</span></td><td>旗舰画质，按 token 计费</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Nano Banana Pro 图生图</span><span class="badge badge-hot">热卖</span></td><td><span class="price">¥0.85</span></td><td>支持 1K/2K/4K，4K 不加价</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Nano Banana 2 图生图</span></td><td><span class="price">¥0.52</span></td><td>支持 0.5K-4K，性价比高</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Flux Kontext Max 图生图</span><span class="badge badge-best">最高质量</span></td><td><span class="price">¥0.86</span></td><td>编辑最高质量、文字精修</td><td>登录后3次</td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Pollinations 免费图生图</span><span class="badge badge-free">免费</span></td><td><span class="free-tag">免费</span></td><td>无限制，适合快速迭代</td><td>无限</td><td>★★★☆☆</td></tr>
+      </tbody>
+    </table>
+    <div style="padding:.5rem 1rem;font-size:.75rem;color:#9e9b94;line-height:1.6;">
+      💡 图生图（i2i）需要上传参考图片，根据提示词对图片进行编辑和修改<br>
+      💡 <strong style="color:#d4a853;">Flux 2 Klein 4B/9B</strong> 超低价 ¥0.12，sub-second 极速出图，适合快速迭代<br>
+      💡 Flux Kontext Pro/Max 专为图像编辑优化，支持多参考图融合<br>
+      💡 GPT Image 1 / 1.5 图生图按<strong style="color:#d4a853;">品质 × 分辨率</strong>分档计费<br>
+      💡 Nano Banana Pro / 2 图生图按次统一价，<strong style="color:#d4a853;">4K 不加价</strong>
+    </div>
+  </div>
+
+  <!-- Free Models -->
+  <div class="table-wrap">
+    <div class="model-section-title">免费模型（Pollinations）</div>
+    <table>
+      <thead><tr><th>模型</th><th>单价</th><th>额度</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Pollinations Flux</span><span class="badge badge-free">免费</span></td><td><span class="free-tag">免费</span></td><td>无限</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Pollinations 写实</span><span class="badge badge-free">免费</span></td><td><span class="free-tag">免费</span></td><td>无限</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Pollinations 动漫</span><span class="badge badge-free">免费</span></td><td><span class="free-tag">免费</span></td><td>无限</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Pollinations 3D</span><span class="badge badge-free">免费</span></td><td><span class="free-tag">免费</span></td><td>无限</td><td>★★★☆☆</td></tr>
+        <tr><td><span class="model-name">Pollinations 极速</span><span class="badge badge-free">免费</span></td><td><span class="free-tag">免费</span></td><td>无限</td><td>★★☆☆☆</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Video Models -->
+  <div class="table-wrap">
+    <div class="model-section-title">视频生成模型<span class="badge badge-hot">新</span></div>
+    <table>
+      <thead><tr><th>模型</th><th>分辨率</th><th>时长</th><th>单价</th><th>推荐</th></tr></thead>
+      <tbody>
+        <tr><td><span class="model-name">Sora 2 标准版</span></td><td>720p</td><td>4秒</td><td><span class="price">¥2.90</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Sora 2 标准版</span></td><td>720p</td><td>8秒</td><td><span class="price">¥5.80</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Sora 2 标准版</span></td><td>720p</td><td>12秒</td><td><span class="price">¥8.70</span></td><td>★★★★☆</td></tr>
+        <tr><td><span class="model-name">Sora 2 Pro</span><span class="badge badge-best">Pro</span></td><td>720p</td><td>4/8/12秒</td><td><span class="price-range">¥8.70 ~ ¥26.10</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Sora 2 Pro</span></td><td>1024p</td><td>4/8/12秒</td><td><span class="price-range">¥14.50 ~ ¥43.50</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Sora 2 Pro</span></td><td>1080p</td><td>4/8/12秒</td><td><span class="price-range">¥20.30 ~ ¥60.90</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Seedance 2.0</span><span class="badge badge-hot">豆包</span></td><td>720p/1080p</td><td>5-11秒</td><td><span class="price-range">¥5.39 ~ ¥19.48</span></td><td>★★★★★</td></tr>
+        <tr><td><span class="model-name">Seedance 2.0 Fast</span></td><td>720p/1080p</td><td>5-11秒</td><td><span class="price-range">¥4.23 ~ ¥15.67</span></td><td>★★★★☆</td></tr>
+      </tbody>
+    </table>
+    <div style="padding:.5rem 1rem;font-size:.75rem;color:#9e9b94;line-height:1.6;">
+      💡 Seedance 系列为<strong style="color:#d4a853;">双价格模型</strong>：预扣最高价，生成完成后按实际 token 消耗计算费用，多退少补
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>计费说明：</strong><br>
+    · GPT Image 1 / 1.5 / 1 Mini 按<strong>品质 × 分辨率</strong>分档计费<br>
+    · GPT Image 2 按 token 计费，表中价格为典型生图场景估算值，实际可能略有浮动<br>
+    · GPT Image 1.5 为最新旗舰，速度比 GPT Image 1 快 4 倍，文本渲染能力最强<br>
+    · Nano Banana Pro / 2 按次统一价，4K 不加价，分辨率越高越划算<br>
+    · GPT Image 2 All / VIP 为官逆模型，按次统一价 ¥0.29，VIP 支持 4K<br>
+    
+    · Seedream 系列性价比高，速度快，输出 URL<br>
+    · Imagen 4.0 系列为 Google 最新图像模型，Ultra 画质最佳<br>
+    · 未登录用户每天 <strong>1次免费</strong> 生成（含付费模型）<br>
+    · 注册新用户赠送 <strong>3次免费</strong> 生成额度<br>
+    · 视频模型不使用免费额度<br>
+    · 付费模型从账户余额扣费，余额不足时提示充值<br>
+    · Pollinations 系列完全免费，不扣余额<br>
+    · 支持 <strong>支付宝</strong> 充值，单笔最高 ¥50<br>
+    · 图生图（i2i）与文生图（t2i）同价
+  </div>
+
+  <p class="footer">栗子素材网 · lizisucaiwang.online</p>
+</div>
+</body>
+</html>
