@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>栗子AI聊天 — 多模型免费对话</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0e0e12;--ink-2:#141419;--ink-3:#1a1a22;--ink-4:#22222e;--paper:#f0ece4;--paper-dim:#b8b0a2;--paper-muted:#6e6860;--vermillion:#a0522d;--vermillion-glow:#c06830;--gold:#c9a84c;--gold-dim:#8a7235;--jade:#4a9e7a;--mist:rgba(240,236,228,0.06);--mist-2:rgba(240,236,228,0.10);--mist-3:rgba(240,236,228,0.16);--radius:8px;--font-sans:'Noto Sans SC','PingFang SC',system-ui,sans-serif;--font-serif:'Noto Serif SC','Songti SC',serif}
+*,::before,::after{margin:0;padding:0;box-sizing:border-box}
+html{font-size:14px}
+body{font-family:var(--font-sans);background:#ffffff;color:#1e293b;overflow:hidden;height:100vh;-webkit-font-smoothing:antialiased}
+::selection{background:var(--vermillion);color:var(--paper)}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--mist-3);border-radius:3px}
+nav{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--ink-2);border-bottom:1px solid var(--mist);z-index:10}
+.nav-brand{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--paper);font-family:var(--font-serif);font-weight:900;font-size:1.15rem}
+.seal{width:24px;height:24px;background:var(--vermillion);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--paper);font-weight:900;transform:rotate(-3deg)}
+.nav-links{display:flex;gap:4px}
+.nav-link{color:var(--paper-dim);font-size:.8rem;padding:4px 14px;border-radius:4px;text-decoration:none;font-weight:500;transition:.2s}
+.nav-link:hover{color:var(--paper);background:var(--ink-4)}
+.nav-link-active{color:var(--paper);font-size:.8rem;padding:4px 14px;background:var(--ink-4);border-radius:4px;text-decoration:none;font-weight:500}
+.app-layout{display:grid;grid-template-columns:240px 1fr;height:calc(100vh - 48px)}
+.sidebar{background:var(--ink-2);border-right:1px solid var(--mist);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-section{padding:12px 14px;border-bottom:1px solid var(--mist)}
+.sidebar-title{font-size:.72rem;color:var(--gold-dim);letter-spacing:.08em;font-weight:500;margin-bottom:8px}
+.new-chat-btn{width:100%;padding:8px;border-radius:6px;background:var(--vermillion);border:none;color:var(--paper);font-family:var(--font-sans);font-size:.78rem;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:.2s}
+.new-chat-btn:hover{background:var(--vermillion-glow)}
+.model-select{width:100%;padding:8px 10px;border-radius:6px;background:var(--ink-3);border:1px solid var(--mist-2);color:var(--paper);font-size:.78rem;font-family:var(--font-sans);outline:none;cursor:pointer}
+.model-select:focus{border-color:var(--gold-dim)}
+.model-select option{background:var(--ink-2);color:var(--paper)}
+.model-desc{font-size:.68rem;color:var(--paper-muted);margin-top:4px}
+.chat-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.chat-item{padding:8px 14px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:.15s;font-size:.78rem;color:var(--paper-dim)}
+.chat-item:hover{background:var(--ink-4)}
+.chat-item.active{background:var(--mist-2);color:var(--paper);border-left:2px solid var(--vermillion)}
+.chat-item-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.chat-item-del{opacity:0;background:none;border:none;color:var(--paper-muted);cursor:pointer;font-size:.8rem;padding:2px 4px;border-radius:3px;transition:.15s;flex-shrink:0}
+.chat-item:hover .chat-item-del{opacity:1}
+.chat-item-del:hover{color:#ef4444;background:rgba(239,68,68,.08)}
+.chat-area{display:flex;flex-direction:column;overflow:hidden}
+.messages{flex:1;overflow-y:auto;padding:20px 0}
+.messages-inner{max-width:780px;margin:0 auto;padding:0 20px}
+.welcome{text-align:center;padding:60px 20px}
+.welcome-icon{font-size:3rem;margin-bottom:16px}
+.welcome h2{font-family:var(--font-serif);font-size:1.4rem;margin-bottom:8px;color:#1e293b}
+.welcome p{color:var(--paper-muted);font-size:.85rem;line-height:1.6;max-width:400px;margin:0 auto}
+.welcome-hints{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:24px;max-width:500px;margin-left:auto;margin-right:auto}
+.hint-card{padding:12px;border-radius:8px;background:var(--ink-2);border:1px solid var(--mist);cursor:pointer;text-align:left;transition:.2s;font-size:.78rem;color:var(--paper-dim);line-height:1.5}
+.hint-card:hover{border-color:var(--gold-dim);color:var(--paper);background:var(--ink-3)}
+.msg{display:flex;gap:12px;padding:16px 0;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg-avatar{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0}
+.msg-avatar.user{background:var(--vermillion);color:var(--paper)}
+.msg-avatar.assistant{background:var(--gold-dim);color:var(--paper)}
+.msg-body{flex:1;min-width:0}
+.msg-role{font-size:.72rem;color:var(--paper-muted);margin-bottom:4px;font-weight:500}
+.msg-content{font-size:.88rem;line-height:1.8;color:var(--paper-dim);word-break:break-word}
+.msg-content p{margin-bottom:8px}
+.msg-content p:last-child{margin-bottom:0}
+.msg-content pre{background:var(--ink-3);border:1px solid var(--mist);border-radius:6px;padding:12px;margin:8px 0;overflow-x:auto;font-size:.78rem;line-height:1.5}
+.msg-content code{background:var(--ink-3);padding:2px 6px;border-radius:3px;font-size:.78rem;font-family:'Fira Code',monospace}
+.msg-content pre code{background:none;padding:0}
+.msg-content ul,.msg-content ol{padding-left:20px;margin:8px 0}
+.msg-content li{margin-bottom:4px}
+.msg-content blockquote{border-left:3px solid var(--gold-dim);padding-left:12px;color:var(--paper-muted);margin:8px 0}
+.msg-content table{border-collapse:collapse;margin:8px 0;width:100%;font-size:.8rem}
+.msg-content th,.msg-content td{border:1px solid var(--mist-2);padding:6px 10px;text-align:left}
+.msg-content th{background:var(--ink-3);color:var(--paper-dim);font-weight:600}
+.msg-actions{display:flex;gap:4px;margin-top:8px;opacity:0;transition:.2s}
+.msg:hover .msg-actions{opacity:1}
+.msg-act-btn{background:none;border:1px solid var(--mist);color:var(--paper-muted);cursor:pointer;font-size:.68rem;padding:3px 8px;border-radius:4px;font-family:var(--font-sans);transition:.15s}
+.msg-act-btn:hover{border-color:var(--mist-3);color:var(--paper-dim)}
+.typing-dots{display:inline-flex;gap:4px;align-items:center;padding:4px 0}
+.typing-dots span{width:6px;height:6px;border-radius:50%;background:var(--paper-muted);animation:bounce 1.4s infinite}
+.typing-dots span:nth-child(2){animation-delay:.2s}
+.typing-dots span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+.input-area{padding:12px 20px 16px;background:var(--ink);border-top:1px solid var(--mist)}
+.input-inner{max-width:780px;margin:0 auto;position:relative}
+.input-box{display:flex;align-items:flex-end;gap:8px;background:var(--ink-2);border:1px solid var(--mist-2);border-radius:10px;padding:8px 12px;transition:border-color .2s}
+.input-box:focus-within{border-color:var(--gold-dim)}
+.input-box textarea{flex:1;background:none;border:none;outline:none;color:var(--paper);font-family:var(--font-sans);font-size:.88rem;resize:none;max-height:150px;min-height:24px;line-height:1.5;padding:4px 0}
+.input-box textarea::placeholder{color:var(--paper-muted);opacity:.4}
+.send-btn{width:36px;height:36px;border-radius:8px;background:var(--vermillion);border:none;color:var(--paper);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+.send-btn:hover{background:var(--vermillion-glow)}
+.send-btn:disabled{opacity:.3;cursor:not-allowed}
+.send-btn svg{width:18px;height:18px}
+.input-hint{font-size:.68rem;color:var(--paper-muted);text-align:center;margin-top:6px;opacity:.5}
+.stop-btn{display:none;margin:0 auto 8px;padding:6px 16px;border-radius:6px;background:var(--ink-3);border:1px solid var(--mist-2);color:var(--paper-dim);cursor:pointer;font-size:.78rem;font-family:var(--font-sans);transition:.2s}
+.stop-btn:hover{border-color:var(--vermillion);color:var(--paper)}
+.stop-btn.visible{display:block}
+@media(max-width:768px){
+.app-layout{grid-template-columns:1fr}
+.sidebar{display:none}
+.sidebar.open{display:flex;position:fixed;inset:0;z-index:50;width:100%}
+.mobile-menu-btn{display:flex!important}
+.sidebar-close-btn{display:flex!important}
+.messages-inner{padding:0 12px}
+.input-area{padding:8px 12px 12px}
+.welcome-hints{grid-template-columns:1fr}
+}
+.mobile-menu-btn{display:none;align-items:center;justify-content:center;width:32px;height:32px;border:none;background:var(--ink-4);color:var(--paper);border-radius:6px;cursor:pointer;font-size:1.1rem;flex-shrink:0}
+.sidebar-close-btn{display:none;position:absolute;top:12px;right:12px;width:32px;height:32px;border:none;background:var(--ink-4);color:var(--paper);border-radius:6px;cursor:pointer;font-size:1.2rem;z-index:51;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<nav>
+<button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="菜单">☰</button>
+<a href="/" class="nav-brand"><span class="seal">栗</span>栗子AI聊天</a>
+<div class="nav-links">
+<a href="/voice/" class="nav-link">多人配音</a>
+<a href="/voice/chat.html" class="nav-link-active">AI聊天</a>
+</div>
+</nav>
+<div class="app-layout">
+<aside class="sidebar" id="sidebar">
+<button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="关闭">×</button>
+<div class="sidebar-section">
+<button class="new-chat-btn" id="newChatBtn">+ 新对话</button>
+</div>
+<div class="sidebar-section">
+<div class="sidebar-title">模型选择</div>
+<select class="model-select" id="modelSelect">
+<option value="glm-4.5-flash" selected>GLM-4.5 Flash</option>
+<option value="glm-4-flash">GLM-4 Flash</option>
+<option value="glm-4-flashx">GLM-4 FlashX</option>
+<option value="glm-4.5v-flash">GLM-4.5V Flash (视觉)</option>
+<option value="qwen-flash">Qwen Flash</option>
+<option value="qwen-turbo">Qwen Turbo</option>
+<option value="qwen3.5-flash">Qwen3.5 Flash</option>
+<option value="deepseek-chat">DeepSeek Chat</option>
+<option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+<option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+<option value="doubao-seed-1.6-flash">豆包 Seed 1.6 Flash</option>
+<option value="mimo-v2-flash">MiMo V2 Flash</option>
+</select>
+<div class="model-desc" id="modelDesc">智谱最新轻量模型 · 免费</div>
+</div>
+<div class="sidebar-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+<div class="sidebar-title">历史对话</div>
+<div class="chat-list" id="chatList"></div>
+</div>
+</aside>
+<div class="chat-area">
+<div class="messages" id="messages">
+<div class="messages-inner" id="messagesInner"></div>
+</div>
+<div class="input-area">
+<div class="input-inner">
+<button class="stop-btn" id="stopBtn">⏹ 停止生成</button>
+<div class="input-box">
+<textarea id="inputText" rows="1" maxlength="8000" placeholder="输入消息... (Enter发送, Shift+Enter换行)"></textarea>
+<button class="send-btn" id="sendBtn">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+</button>
+</div>
+<div class="input-hint">所有模型均免费使用 · 由智增增API提供</div>
+</div>
+</div>
+</div>
+</div>
+<script src="/auth.js"></script>
+<script>
+
+var conversations = JSON.parse(localStorage.getItem('lizi_chat_convos') || '[]');
+var activeConvoId = null;
+var isGenerating = false;
+var abortController = null;
+
+var MODELS = {
+  'glm-4.5-flash': '智谱最新轻量模型',
+  'glm-4-flash': '智谱高速模型',
+  'glm-4-flashx': '智谱增强版',
+  'glm-4.5v-flash': '智谱多模态视觉',
+  'qwen-flash': '通义千问轻量',
+  'qwen-turbo': '通义千问均衡',
+  'qwen3.5-flash': '通义千问3.5轻量',
+  'deepseek-chat': '深度求索对话',
+  'deepseek-v4-flash': '深度求索V4轻量',
+  'gemini-2.5-flash-lite': 'Google轻量模型',
+  'doubao-seed-1.6-flash': '字节豆包轻量',
+  'mimo-v2-flash': '小米轻量模型'
+};
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function init() {
+  renderChatList();
+  renderMessages();
+  document.getElementById('newChatBtn').addEventListener('click', newChat);
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  document.getElementById('stopBtn').addEventListener('click', stopGenerate);
+  document.getElementById('modelSelect').addEventListener('change', onModelChange);
+  document.getElementById('inputText').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  document.getElementById('inputText').addEventListener('input', function() { autoResize(this); });
+  // P2 FIX: Mobile sidebar toggle
+  var mobileBtn = document.getElementById('mobileMenuBtn');
+  var closeBtn = document.getElementById('sidebarCloseBtn');
+  var sidebar = document.getElementById('sidebar');
+  if (mobileBtn) mobileBtn.addEventListener('click', function() { sidebar.classList.add('open'); });
+  if (closeBtn) closeBtn.addEventListener('click', function() { sidebar.classList.remove('open'); });
+}
+
+function saveConvos() {
+  // P1 FIX: Enforce limit + protect against quota errors
+  var MAX_CONVOS = 50;
+  if (conversations.length > MAX_CONVOS) {
+    conversations = conversations.slice(0, MAX_CONVOS);
+  }
+  try {
+    localStorage.setItem('lizi_chat_convos', JSON.stringify(conversations));
+  } catch(e) {
+    console.warn('localStorage quota exceeded, pruning old conversations');
+    // Aggressively prune: keep only last 10 conversations
+    conversations = conversations.slice(0, 10);
+    try {
+      localStorage.setItem('lizi_chat_convos', JSON.stringify(conversations));
+    } catch(e2) {
+      console.error('Still cannot save, localStorage may be full');
+    }
+  }
+}
+
+function newChat() {
+  var convo = {
+    id: 'c_' + Date.now(),
+    title: '新对话',
+    messages: [],
+    model: document.getElementById('modelSelect').value,
+    createdAt: new Date().toISOString()
+  };
+  conversations.unshift(convo);
+  saveConvos();
+  loadConvo(convo.id);
+  renderChatList();
+  document.getElementById('inputText').focus();
+}
+
+function loadConvo(id) {
+  activeConvoId = id;
+  var convo = conversations.find(function(c){return c.id===id});
+  if (!convo) return;
+  if (convo.model && MODELS[convo.model]) {
+    document.getElementById('modelSelect').value = convo.model;
+    onModelChange();
+  }
+  renderMessages();
+  renderChatList();
+}
+
+function deleteConvo(id, e) {
+  e.stopPropagation();
+  conversations = conversations.filter(function(c){return c.id!==id});
+  saveConvos();
+  if (activeConvoId === id) { activeConvoId = null; renderMessages(); }
+  renderChatList();
+}
+
+function renderChatList() {
+  var list = document.getElementById('chatList');
+  if (conversations.length === 0) {
+    list.innerHTML = '<div style="padding:12px;text-align:center;color:var(--paper-muted);font-size:.72rem">暂无对话记录</div>';
+    return;
+  }
+  // P2 FIX: Use DOM API instead of innerHTML to prevent onclick injection via crafted IDs
+  list.innerHTML = '';
+  conversations.forEach(function(c) {
+    var item = document.createElement('div');
+    item.className = 'chat-item' + (c.id === activeConvoId ? ' active' : '');
+    item.addEventListener('click', function() { loadConvo(c.id); });
+
+    var title = document.createElement('span');
+    title.className = 'chat-item-title';
+    title.textContent = c.title;
+
+    var del = document.createElement('button');
+    del.className = 'chat-item-del';
+    del.title = '删除';
+    del.textContent = '\u00d7';
+    del.addEventListener('click', function(e) { e.stopPropagation(); deleteConvo(c.id, e); });
+
+    item.appendChild(title);
+    item.appendChild(del);
+    list.appendChild(item);
+  });
+}
+
+function renderMessages() {
+  var inner = document.getElementById('messagesInner');
+  var convo = conversations.find(function(c){return c.id===activeConvoId});
+  if (!convo || convo.messages.length === 0) {
+    inner.innerHTML = '<div class="welcome"><div class="welcome-icon">🌰</div><h2>栗子AI聊天</h2>' +
+      '<p>免费使用多种AI模型，支持流式输出、代码高亮、Markdown渲染。</p>' +
+      '<div class="welcome-hints">' +
+      '<div class="hint-card" onclick="useHint(this)">✨ 帮我写一首关于春天的短诗</div>' +
+      '<div class="hint-card" onclick="useHint(this)">💻 用Python写一个快速排序算法</div>' +
+      '<div class="hint-card" onclick="useHint(this)">🔬 解释一下量子计算的基本原理</div>' +
+      '<div class="hint-card" onclick="useHint(this)">🎬 帮我写一段短剧剧本大纲</div>' +
+      '</div></div>';
+    return;
+  }
+  inner.innerHTML = convo.messages.map(renderMsg).join('');
+  scrollToBottom();
+}
+
+function renderMsg(m) {
+  var ac = m.role==='user'?'user':'assistant';
+  var at = m.role==='user'?'你':'AI';
+  var rn = m.role==='user'?'你':(MODELS[m.model]||'AI助手');
+  return '<div class="msg"><div class="msg-avatar '+ac+'">'+at+'</div><div class="msg-body">' +
+    '<div class="msg-role">'+escHtml(rn)+'</div>' +
+    '<div class="msg-content">'+(m.role==='assistant'?renderMarkdown(m.content):escHtml(m.content))+'</div>' +
+    (m.role==='assistant'?'<div class="msg-actions"><button class="msg-act-btn" onclick="copyMsg(this)">复制</button></div>':'') +
+    '</div></div>';
+}
+
+function useHint(el) {
+  var text = el.textContent.replace(/^[^\s]+\s/, '');
+  document.getElementById('inputText').value = text;
+  sendMessage();
+}
+
+async function sendMessage() {
+  var input = document.getElementById('inputText');
+  var text = input.value.trim();
+  if (!text || isGenerating) return;
+  if (!activeConvoId) newChat();
+  var convo = conversations.find(function(c){return c.id===activeConvoId});
+  if (!convo) return;
+  var model = document.getElementById('modelSelect').value;
+  convo.messages.push({ role: 'user', content: text, model: model });
+  if (convo.messages.filter(function(m){return m.role==='user'}).length === 1) {
+    convo.title = text.substring(0, 30) + (text.length > 30 ? '...' : '');
+    renderChatList();
+  }
+  input.value = '';
+  autoResize(input);
+  convo.messages.push({ role: 'assistant', content: '', model: model });
+  renderMessages();
+  isGenerating = true;
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('stopBtn').classList.add('visible');
+
+  var msgContents = document.querySelectorAll('.msg-content');
+  var lastContent = msgContents[msgContents.length - 1];
+  if (lastContent) lastContent.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+
+  try {
+    abortController = new AbortController();
+    var apiMsg = convo.messages
+      .filter(function(m){return m.role==='user'||(m.role==='assistant'&&m.content)})
+      .map(function(m){return {role:m.role,content:m.content}});
+
+    var resp = await fetch('/voice/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({model:model, messages:apiMsg}),
+      signal: abortController.signal
+    });
+
+    if (!resp.ok) {
+      var err = await resp.json();
+      throw new Error(err.error || '请求失败');
+    }
+
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var fullContent = '';
+    var buffer = '';
+    var hasError = false;
+
+    while (true) {
+      var result = await reader.read();
+      if (result.done) break;
+      if (hasError) break; // P2 FIX: Stop reading after error to prevent content mixing
+      buffer += decoder.decode(result.value, {stream:true});
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (var i=0; i<lines.length; i++) {
+        var line = lines[i];
+        // P2 FIX: Handle both "data: " and "data:" (no space)
+        if (!line.startsWith('data:')) continue;
+        var payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          var data = JSON.parse(payload);
+          if (data.error) { fullContent += '\n\n\u26a0\ufe0f ' + data.error; hasError = true; break; }
+          if (data.content) {
+            fullContent += data.content;
+            var la = convo.messages.filter(function(m){return m.role==='assistant'}).pop();
+            if (la) la.content = fullContent;
+            if (lastContent) { lastContent.innerHTML = renderMarkdown(fullContent); scrollToBottom(); }
+          }
+        } catch(e) {
+          // P2 FIX: Incomplete JSON at chunk boundary — put back into buffer to retry
+          if (i === lines.length - 1 && buffer === '') {
+            buffer = line;
+          }
+        }
+      }
+    }
+
+    var la2 = convo.messages.filter(function(m){return m.role==='assistant'}).pop();
+    if (la2 && !la2.content) la2.content = '（未收到回复）';
+
+  } catch(e) {
+    if (e.name === 'AbortError') {
+      var la3 = convo.messages.filter(function(m){return m.role==='assistant'}).pop();
+      if (la3 && !la3.content) la3.content = '（已停止生成）';
+    } else {
+      var la4 = convo.messages.filter(function(m){return m.role==='assistant'}).pop();
+      if (la4) la4.content = '⚠️ 错误: ' + e.message;
+    }
+  } finally {
+    isGenerating = false;
+    abortController = null;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('stopBtn').classList.remove('visible');
+    saveConvos();
+    renderMessages();
+  }
+}
+
+function stopGenerate() { if (abortController) abortController.abort(); }
+
+function onModelChange() {
+  var sel = document.getElementById('modelSelect');
+  var desc = document.getElementById('modelDesc');
+  desc.textContent = (MODELS[sel.value]||'') + ' · 免费';
+  var convo = conversations.find(function(c){return c.id===activeConvoId});
+  if (convo) { convo.model = sel.value; saveConvos(); }
+}
+
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,150)+'px'; }
+function scrollToBottom() { var m=document.getElementById('messages'); m.scrollTop=m.scrollHeight; }
+
+function copyMsg(btn) {
+  var content = btn.closest('.msg-body').querySelector('.msg-content');
+  navigator.clipboard.writeText(content.innerText).then(function(){
+    btn.textContent='已复制'; setTimeout(function(){btn.textContent='复制'},1500);
+  });
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  // P0 FIX: Escape HTML FIRST to prevent XSS
+  var html = escHtml(text);
+  // Code blocks (already safe — html is escaped)
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_,lang,code){return '<pre><code>'+code.trim()+'</code></pre>'});
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold & italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Headings
+  html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+  // Blockquote & list
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  // Paragraphs
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br>');
+  html = '<p>' + html + '</p>';
+  html = html.replace(/<p>\s*<\/p>/g, '');
+  html = html.replace(/<p>\s*(<(?:h[234]|pre|table|ul|blockquote)>)/g, '$1');
+  html = html.replace(/(<\/(?:h[234]|pre|table|ul|blockquote)>)\s*<\/p>/g, '$1');
+  return html;
+}
+
+init();
+
+</script>
+</body>
+</html>
