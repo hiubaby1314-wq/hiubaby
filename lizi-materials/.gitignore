@@ -3,3 +3,24 @@ data/*
 !data/materials-snapshot.json
 .env
 .DS_Store
+
+# Backup files
+*.bak
+*.bak.*
+backups/
+
+# Watermark tool directories (large, not needed in repo)
+watermark_backup/
+watermark_preview/
+watermark_preview_v2/
+animate-asset-web/
+
+# PM2 config has secrets - keep on server only
+ecosystem.config.js
+
+# Logs
+*.log
+server.log
+
+# Docker (not used, running PM2)
+# Dockerfile kept for reference but ignored from future tracking
