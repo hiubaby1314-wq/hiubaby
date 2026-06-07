@@ -561,7 +561,17 @@ function getAllMaterials() {
 // === API Routes ===
 
 // Login
-app.post('/api/login', async (req, res) => {
+
+// Brute-force protection for login
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: '登录尝试过于频繁，请1分钟后再试' }
+});
+
+app.post('/api/login', loginLimiter, async (req, res) => {
   const { username, password, deviceId } = req.body;
   const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
   if (!username || !password) return res.json({ ok: false, error: '请输入用户名和密码' });
@@ -1262,7 +1272,7 @@ const os = require('os');
 const WHISPER_BIN = '/opt/whisper.cpp/build/bin/whisper-cli';
 const WHISPER_MODEL = '/opt/whisper.cpp/models/ggml-tiny.bin';
 
-app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+app.post('/api/transcribe', requireAuth, upload.single('audio'), async (req, res) => {
   if (!req.file) return res.json({ ok: false, error: 'No audio file provided' });
 
   const tmpDir = os.tmpdir();
@@ -1386,75 +1396,8 @@ app.get('/sitemap.xml', (req, res) => {
 });
 
 // === Diagnostic Endpoint (test R2 upload/download) ===
-app.get('/api/debug/r2-test', async (req, res) => {
-  const results = { timestamp: new Date().toISOString() };
-  
-  // Check config
-  results.config = {
-    USE_R2,
-    R2_BUCKET: R2_BUCKET ? R2_BUCKET.substring(0, 10) + '...' : '(empty)',
-    R2_ACCOUNT_ID: R2_ACCOUNT_ID ? R2_ACCOUNT_ID.substring(0, 8) + '...' : '(empty)',
-    R2_ACCESS_KEY_ID: R2_ACCESS_KEY_ID ? 'set (' + R2_ACCESS_KEY_ID.substring(0, 8) + '...)' : '(empty)',
-    R2_SECRET_ACCESS_KEY: R2_SECRET_ACCESS_KEY ? 'set (' + R2_SECRET_ACCESS_KEY.length + ' chars)' : '(empty)',
-    R2_PUBLIC_URL,
-    s3ClientInitialized: !!s3Client,
-  };
-  
-  if (!USE_R2 || !cosClient) {
-    results.error = 'R2 not configured';
-    return res.json(results);
-  }
+// /api/debug/r2-test removed (security)
 
-  // Test 1: Upload a tiny test file
-  const testKey = 'uploads/_diag_test_' + Date.now() + '.txt';
-  const testContent = Buffer.from('R2 diagnostic test - ' + new Date().toISOString());
-  try {
-    const url = await uploadToR2(testKey, testContent, 'text/plain');
-    results.upload = { ok: true, url };
-  } catch(e) {
-    results.upload = { ok: false, error: e.message, name: e.name, code: e.Code, statusCode: e.$metadata?.httpStatusCode };
-    return res.json(results);
-  }
-
-  // Test 2: Download it back
-  try {
-    const buf = await downloadFromR2(testKey);
-    results.download = { ok: !!buf, size: buf ? buf.length : 0, content: buf ? buf.toString() : null };
-  } catch(e) {
-    results.download = { ok: false, error: e.message };
-  }
-
-  // Test 3: Verify public URL is accessible
-  try {
-    const publicUrl = `${R2_PUBLIC_URL}/${testKey}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const fetchRes = await fetch(publicUrl, { signal: controller.signal });
-    clearTimeout(timeout);
-    results.publicAccess = { ok: fetchRes.ok, status: fetchRes.status, url: publicUrl };
-  } catch(e) {
-    results.publicAccess = { ok: false, error: e.message };
-  }
-
-  // Test 4: Cleanup
-  try {
-    await deleteFromR2(`${R2_PUBLIC_URL}/${testKey}`);
-    results.cleanup = { ok: true };
-  } catch(e) {
-    results.cleanup = { ok: false, error: e.message };
-  }
-
-  // Test 5: Check multer config
-  results.multer = {
-    storage: 'memoryStorage',
-    fileSizeLimit: '100MB',
-    maxFiles: 20
-  };
-
-  res.json(results);
-});
-
-// === Multer Error Handler (must be after all routes) ===
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     console.error(`[Multer Error] code=${err.code} message="${err.message}" field=${err.field || 'N/A'}`);
@@ -1727,7 +1670,7 @@ app.use('/wan-files', express.static(path.join(__dirname, 'data', 'wan-uploads')
   }
 }));
 // === 多模型圖片生成 (MuleRouter) ===
-const MULEROUTER_API_KEY = process.env.MULEROUTER_API_KEY || 'sk-mr-5fdb9ef902b7d05f469385e0a46de1eb14cd3b26ca8a6c70067a86527ed92dcb';
+const MULEROUTER_API_KEY = process.env.MULEROUTER_API_KEY || ''; // key must be set in .env
 const MULEROUTER_BASE_URL = process.env.MULEROUTER_BASE_URL || 'https://api.mulerouter.ai';
 const WAN_USAGE_PATH = path.join(__dirname, 'data', 'wan_usage.json');
 const DAILY_BUDGET_CNY = 2.0;  // 每日限額 2 元人民幣
@@ -2017,7 +1960,7 @@ app.post('/api/ai/host-image', requireAuth, upload.single('image'), async (req, 
   }
 });
 
-const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY || 'sk-RL3e5gM2Y9lGy2nlDjLEq8MFdwfF9qEvzsyOfAQGYkvGDXzE';
+const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY || ''; // key must be set in .env
 
 // POST /api/ai/wan/generate - 万相2.7 图像生成 (OpenAI compatible via aigcbest)
 app.post('/api/ai/wan/generate', requireAuth, async (req, res) => {
@@ -2357,7 +2300,7 @@ app.get('/api/ai/wan/history', requireAuth, (req, res) => {
 });
 
 // === Video API Proxy (Sora 2, Seedance, Kling, Minimax) ===
-const ZZ_VIDEO_API_KEY = process.env.ZHIZENGZENG_API_KEY || process.env.ZZ_API_KEY || 'sk-zk21a2660d7104b3c7cc3ad7404326f5a3a6a22b4daacfbc';
+const ZZ_VIDEO_API_KEY = process.env.ZHIZENGZENG_API_KEY || process.env.ZZ_API_KEY || ''; // key must be set in .env
 const ZZ_VIDEO_API_URL = process.env.APIYI_VIDEO_URL || "https://api2.aigcbest.top";
 
 // Map aspect ratio to pixel size
@@ -2387,7 +2330,7 @@ function normalizeSeconds(seconds) {
   return '12';
 }
 
-app.post('/api/video/generate', async (req, res) => {
+app.post('/api/video/generate', requireAuth, async (req, res) => {
   try {
     // Accept both frontend (duration, ratio) and backend (seconds, size) param names
     const { model, prompt, seconds, size, duration, ratio, resolution, image_url } = req.body;
@@ -2443,7 +2386,7 @@ app.post('/api/video/generate', async (req, res) => {
   }
 });
 
-app.get('/api/video/status/:id', async (req, res) => {
+app.get('/api/video/status/:id', requireAuth, async (req, res) => {
   try {
     const resp = await fetch(`${ZZ_VIDEO_API_URL}/v1/videos/${req.params.id}`, {
       headers: { 'Authorization': `Bearer ${ZZ_VIDEO_API_KEY}` }
@@ -2456,7 +2399,7 @@ app.get('/api/video/status/:id', async (req, res) => {
   }
 });
 
-app.get('/api/video/download/:id', async (req, res) => {
+app.get('/api/video/download/:id', requireAuth, async (req, res) => {
   try {
     const resp = await fetch(`${ZZ_VIDEO_API_URL}/v1/videos/${req.params.id}/content`, {
       headers: { 'Authorization': `Bearer ${ZZ_VIDEO_API_KEY}` }
