@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理员后台 - 栗子AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #e8e4e8;
+      padding: 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: #c8a2c8; margin-bottom: 2rem; }
+    h2 { color: #a8c8c8; margin-bottom: 1rem; }
+    .login-box {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    input, button {
+      width: 100%;
+      padding: 0.8rem;
+      margin-bottom: 1rem;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(0,0,0,0.3);
+      color: #e8e4e8;
+      font-size: 1rem;
+    }
+    button {
+      background: linear-gradient(135deg, #c8a2c8, #a8c8c8);
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { opacity: 0.9; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      padding: 0.8rem;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    th { color: #c8a2c8; }
+    .recharge-form {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .recharge-form input {
+      width: 100px;
+      margin: 0;
+    }
+    .recharge-form button {
+      width: auto;
+      padding: 0.5rem 1rem;
+      margin: 0;
+    }
+    .message {
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .message.success { background: rgba(100,200,100,0.2); display: block; }
+    .message.error { background: rgba(200,100,100,0.2); display: block; }
+    .tabs {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      border-bottom: 2px solid rgba(255,255,255,0.1);
+    }
+    .tab {
+      padding: 0.8rem 1.5rem;
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+      background: rgba(255,255,255,0.05);
+      transition: all 0.3s;
+    }
+    .tab.active {
+      background: rgba(200,162,200,0.2);
+      color: #c8a2c8;
+      border-bottom: 2px solid #c8a2c8;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+    .image-card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+    .image-card:hover { transform: translateY(-4px); }
+    .image-card img {
+      width: 100%;
+      height: 250px;
+      object-fit: cover;
+      display: block;
+    }
+    .image-info {
+      padding: 1rem;
+    }
+    .image-info p {
+      margin: 0.3rem 0;
+      font-size: 0.85rem;
+      color: #a8a8a8;
+    }
+    .image-info .prompt {
+      color: #e8e4e8;
+      font-weight: 500;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .image-info .model {
+      color: #a8c8c8;
+      font-size: 0.75rem;
+    }
+    .delete-btn {
+      width: 100%;
+      padding: 0.6rem;
+      background: rgba(200,100,100,0.3);
+      color: #ff8888;
+      border: 1px solid rgba(200,100,100,0.5);
+      border-radius: 0 0 12px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .delete-btn:hover {
+      background: rgba(200,100,100,0.5);
+    }
+    .pagination {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 2rem;
+    }
+    .page-btn {
+      width: auto;
+      padding: 0.5rem 1rem;
+      background: rgba(255,255,255,0.1);
+    }
+    .page-btn.active {
+      background: rgba(200,162,200,0.3);
+    }
+    .page-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>管理员后台</h1>
+
+    <div id="loginSection">
+      <div class="login-box">
+        <h3 style="color:#c8a2c8;margin-bottom:1rem;">管理员登录</h3>
+        <input type="tel" id="phone" placeholder="手机号" value="17121734984">
+        <input type="password" id="password" placeholder="密码">
+        <button onclick="login()">登录</button>
+      </div>
+    </div>
+
+    <div id="adminSection" style="display:none;">
+      <div id="message" class="message"></div>
+
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('users')">用户管理</div>
+        <div class="tab" onclick="switchTab('images')">图片管理</div>
+      </div>
+
+      <div id="usersTab" class="tab-content active">
+        <h2>用户列表</h2>
+        <button onclick="loadUsers()" style="width:auto;padding:0.6rem 1.2rem;margin-bottom:1rem;">刷新列表</button>
+
+        <table id="usersTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>手机号</th>
+              <th>余额</th>
+              <th>免费次数</th>
+              <th>注册时间</th>
+              <th>手动充值</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+
+      <div id="imagesTab" class="tab-content">
+        <h2>生成图片管理</h2>
+        <button onclick="loadGenerations(1)" style="width:auto;padding:0.6rem 1.2rem;margin-bottom:1rem;">刷新列表</button>
+
+        <div id="imageGrid" class="image-grid"></div>
+        <div id="pagination" class="pagination"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/auth.js"></script>
+<script>
+    const API_BASE = '/api/ai';
+    let authToken = null;
+    let currentPage = 1;
+
+    function showMessage(text, type) {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      msg.className = 'message ' + type;
+      setTimeout(() => { msg.className = 'message'; }, 5000);
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+      event.target.classList.add('active');
+      document.getElementById(tab + 'Tab').classList.add('active');
+
+      if (tab === 'images') {
+        loadGenerations(1);
+      }
+    }
+
+    async function login() {
+      const phone = document.getElementById('phone').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const resp = await fetch(`${API_BASE}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, password })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) throw new Error(data.error);
+
+        authToken = data.token;
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('adminSection').style.display = 'block';
+        loadUsers();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/users`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const users = await resp.json();
+
+        if (!resp.ok) throw new Error(users.error);
+
+        const tbody = document.getElementById('usersBody');
+        tbody.innerHTML = users.map(u => `
+          <tr>
+            <td>${u.id}</td>
+            <td>${u.phone}</td>
+            <td>¥${u.balance.toFixed(2)}</td>
+            <td>${u.free_credits}</td>
+            <td>${new Date(u.created_at).toLocaleString('zh-CN')}</td>
+            <td>
+              <div class="recharge-form">
+                <input type="number" id="amount-${u.id}" placeholder="金额" min="1">
+                <button onclick="addBalance(${u.id})">充值</button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    }
+
+    async function addBalance(userId) {
+      const amount = parseFloat(document.getElementById(`amount-${userId}`).value);
+
+      if (!amount || amount <= 0) {
+        showMessage('请输入有效金额', 'error');
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/add-balance`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ userId, amount })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) throw new Error(data.error);
+
+        showMessage(data.message, 'success');
+        document.getElementById(`amount-${userId}`).value = '';
+        loadUsers();
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    }
+
+    async function loadGenerations(page) {
+      currentPage = page;
+      try {
+        const resp = await fetch(`${API_BASE}/admin/generations?page=${page}&limit=20`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) throw new Error(data.error);
+
+        const grid = document.getElementById('imageGrid');
+
+        if (data.generations.length === 0) {
+          grid.innerHTML = '<p style="text-align:center;grid-column:1/-1;padding:2rem;">暂无生成记录</p>';
+          document.getElementById('pagination').innerHTML = '';
+          return;
+        }
+
+        grid.innerHTML = data.generations.map(g => `
+          <div class="image-card">
+            <img src="${g.image_url}" alt="Generated image" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22250%22 height=%22250%22><rect fill=%22%23333%22 width=%22250%22 height=%22250%22/><text x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 fill=%22%23999%22>图片加载失败</text></svg>'">
+            <div class="image-info">
+              <p class="prompt">${g.prompt}</p>
+              <p class="model">模型: ${g.model}</p>
+              <p>用户: ${g.user_phone || '未知'}</p>
+              <p>${new Date(g.created_at).toLocaleString('zh-CN')}</p>
+              <p>费用: ¥${g.cost.toFixed(2)} ${g.is_free ? '(免费)' : ''}</p>
+            </div>
+            <button class="delete-btn" onclick="deleteGeneration(${g.id})">删除</button>
+          </div>
+        `).join('');
+
+        // Pagination
+        const pagination = document.getElementById('pagination');
+        let pages = '';
+
+        if (data.page > 1) {
+          pages += `<button class="page-btn" onclick="loadGenerations(${data.page - 1})">上一页</button>`;
+        }
+
+        for (let i = 1; i <= data.totalPages; i++) {
+          pages += `<button class="page-btn ${i === data.page ? 'active' : ''}" onclick="loadGenerations(${i})">${i}</button>`;
+        }
+
+        if (data.page < data.totalPages) {
+          pages += `<button class="page-btn" onclick="loadGenerations(${data.page + 1})">下一页</button>`;
+        }
+
+        pagination.innerHTML = pages;
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    }
+
+    async function deleteGeneration(id) {
+      if (!confirm('确定要删除这张图片吗？')) return;
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/generations/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) throw new Error(data.error);
+
+        showMessage('已删除', 'success');
+        loadGenerations(currentPage);
+      } catch (err) {
+        showMessage(err.message, 'error');
+      }
+    }
+  </script>
+</body>
+</html>
