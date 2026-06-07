@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>栗子配音 - AI声音克隆</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh;color:#fff;overflow-x:hidden}
+    .app{max-width:680px;margin:0 auto;padding:20px 16px 40px}
+    h1{font-size:26px;font-weight:700;text-align:center;margin-bottom:6px}
+    .subtitle{text-align:center;color:rgba(255,255,255,.6);font-size:13px;margin-bottom:24px}
+    /* Login */
+    .login-box{background:rgba(255,255,255,.08);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:28px 24px;text-align:center}
+    .login-box input{width:100%;padding:12px 16px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;font-size:15px;margin-bottom:12px;outline:none;transition:.3s}
+    .login-box input:focus{border-color:#7c5cfc}
+    .login-box input::placeholder{color:rgba(255,255,255,.4)}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:12px 24px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:all .25s;width:100%}
+    .btn-primary{background:linear-gradient(135deg,#7c5cfc,#ff6b9d);color:#fff}
+    .btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 25px rgba(124,92,252,.4)}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+    .btn-outline{background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff}
+    .btn-outline:hover{background:rgba(255,255,255,.08)}
+    .btn-danger{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#f87171}
+    .btn-danger:hover{background:rgba(239,68,68,.25)}
+    .btn-sm{padding:8px 16px;font-size:13px;width:auto;border-radius:8px}
+    /* Card */
+    .card{background:rgba(255,255,255,.08);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:24px;margin-bottom:16px}
+    .card-title{font-size:16px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+    .card-title .icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px}
+    /* Status */
+    .status-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500}
+    .status-ready{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3)}
+    .status-none{background:rgba(251,191,36,.12);color:#fbbf24;border:1px solid rgba(251,191,36,.3)}
+    .status-loading{background:rgba(96,165,250,.12);color:#60a5fa;border:1px solid rgba(96,165,250,.3)}
+    .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+    /* Upload */
+    .upload-area{border:2px dashed rgba(255,255,255,.2);border-radius:12px;padding:32px 20px;text-align:center;cursor:pointer;transition:.3s;position:relative}
+    .upload-area:hover,.upload-area.dragover{border-color:#7c5cfc;background:rgba(124,92,252,.08)}
+    .upload-area input{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .upload-icon{font-size:36px;margin-bottom:8px}
+    .upload-text{color:rgba(255,255,255,.6);font-size:13px;margin-top:6px}
+    .upload-hint{color:rgba(255,255,255,.35);font-size:12px;margin-top:4px}
+    .file-info{display:flex;align-items:center;gap:10px;padding:12px;background:rgba(255,255,255,.06);border-radius:10px;margin-top:12px}
+    .file-info .fname{flex:1;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .file-info .fsize{color:rgba(255,255,255,.5);font-size:12px}
+    /* Textarea */
+    textarea{width:100%;min-height:120px;padding:14px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;font-size:15px;font-family:inherit;resize:vertical;outline:none;transition:.3s;line-height:1.6}
+    textarea:focus{border-color:#7c5cfc}
+    textarea::placeholder{color:rgba(255,255,255,.3)}
+    /* Controls row */
+    .controls-row{display:flex;gap:12px;align-items:center;margin:16px 0;flex-wrap:wrap}
+    .speed-control{display:flex;align-items:center;gap:8px;font-size:13px;color:rgba(255,255,255,.6)}
+    .speed-control input[type=range]{width:100px;accent-color:#7c5cfc}
+    .char-count{margin-left:auto;font-size:12px;color:rgba(255,255,255,.4)}
+    /* Audio player */
+    .audio-player{background:rgba(255,255,255,.06);border-radius:12px;padding:16px;margin-top:16px}
+    .audio-player audio{width:100%;height:40px}
+    /* Buttons row */
+    .btn-row{display:flex;gap:10px;margin-top:16px}
+    .btn-row .btn{flex:1}
+    /* Toast */
+    .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);padding:12px 24px;border-radius:10px;font-size:14px;font-weight:500;z-index:9999;transition:transform .4s cubic-bezier(.4,0,.2,1);max-width:90vw;text-align:center}
+    .toast.show{transform:translateX(-50%) translateY(0)}
+    .toast-success{background:rgba(34,197,94,.9);color:#fff}
+    .toast-error{background:rgba(239,68,68,.9);color:#fff}
+    .toast-info{background:rgba(96,165,250,.9);color:#fff}
+    /* Loader */
+    .spinner{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-overlay{position:absolute;inset:0;background:rgba(0,0,0,.4);border-radius:16px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;z-index:10}
+    .loading-overlay .spinner{width:32px;height:32px;border-width:3px}
+    /* User bar */
+    .user-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding:10px 16px;background:rgba(255,255,255,.06);border-radius:12px}
+    .user-bar .username{font-weight:600;font-size:14px}
+    /* Preview audio */
+    .preview-audio{margin-top:12px}
+    .preview-audio audio{width:100%;height:36px}
+    /* Sections */
+    .section{display:none}
+    .section.active{display:block}
+    /* Responsive */
+    @media(max-width:480px){
+      .app{padding:16px 12px 32px}
+      h1{font-size:22px}
+      .card{padding:18px 14px}
+      .upload-area{padding:24px 16px}
+      .controls-row{flex-direction:column;align-items:stretch}
+      .char-count{margin-left:0;text-align:right}
+    }
+  </style>
+  <script src="/auth.js"></script>
+<script>
+  // Anti-devtools / copy protection
+  (function(){
+    var _0x=['selectstart','contextmenu','copy','cut','dragstart','keydown'];
+    var _0y=[123,73,74,67,67,88,65,83,85];
+    var _d=document,_w=window;
+    _0x.forEach(function(ev){_d.addEventListener(ev,function(e){
+      if(ev===_0x[5]){var k=e.keyCode;
+        if(k===_0y[0])return e.preventDefault();
+        if(e.ctrlKey&&e.shiftKey&&_0y.slice(1,4).indexOf(k)!==-1)return e.preventDefault();
+        if(e.ctrlKey&&_0y.slice(4).indexOf(k)!==-1)return e.preventDefault();
+      }else{e.preventDefault()}
+    })});
+    ['log','info','warn','error','debug','clear'].forEach(function(m){if(_w.console)_w.console[m]=function(){}});
+    var _style=_d.createElement('style');
+    _style.textContent='*{-webkit-user-select:none!important;-moz-user-select:none!important;user-select:none!important}input,textarea,select{-webkit-user-select:text!important;-moz-user-select:text!important;user-select:text!important}img{-webkit-user-drag:none!important;pointer-events:none!important}';
+    _d.head.appendChild(_style);
+  })();
+  </script>
+</head>
+<body>
+<div class="app">
+  <h1>&#x1F399;&#xFE0F; 栗子配音</h1>
+  <p class="subtitle">AI 声音克隆 · 上传声音生成专属语音</p>
+
+  <!-- Login Section -->
+  <div class="section active" id="loginSection">
+    <div class="login-box">
+      <p style="margin-bottom:16px;font-size:14px;color:rgba(255,255,255,.7)">请输入素材网账号登录</p>
+      <input type="text" id="loginUsername" placeholder="用户名" autocomplete="username">
+      <input type="password" id="loginPassword" placeholder="密码" autocomplete="current-password">
+      <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">登录</button>
+    </div>
+  </div>
+
+  <!-- User Bar (shown after login) -->
+  <div class="user-bar" id="userBar" style="display:none">
+    <span class="username" id="userDisplay"></span>
+    <button class="btn btn-outline btn-sm" onclick="doLogout()">退出</button>
+  </div>
+
+  <!-- Main Content (shown after login) -->
+  <div id="mainContent" style="display:none">
+
+    <!-- Voice Clone Status -->
+    <div class="card" id="statusCard">
+      <div class="card-title">
+        <span class="icon" style="background:rgba(124,92,252,.2)">&#x1F3A4;</span>
+        声音状态
+        <span id="statusBadge" style="margin-left:auto"></span>
+      </div>
+      <div id="statusContent"></div>
+    </div>
+
+    <!-- Upload Section (shown when no clone) -->
+    <div class="section" id="uploadSection">
+      <div class="card" style="position:relative">
+        <div class="card-title">
+          <span class="icon" style="background:rgba(251,191,36,.2)">&#x1F4E4;</span>
+          上传声音样本
+        </div>
+        <div class="upload-area" id="uploadArea">
+          <input type="file" id="audioFile" accept=".mp3,.m4a,.wav" onchange="onFileSelect(this)">
+          <div class="upload-icon">&#x1F3B5;</div>
+          <div style="font-weight:600">点击或拖拽上传音频</div>
+          <div class="upload-text">支持 mp3 / m4a / wav 格式</div>
+          <div class="upload-hint">时长 10 秒 ~ 5 分钟，文件不超过 20MB</div>
+        </div>
+        <div class="file-info" id="fileInfo" style="display:none">
+          <span style="font-size:20px">&#x1F3B6;</span>
+          <span class="fname" id="fileName"></span>
+          <span class="fsize" id="fileSize"></span>
+          <button class="btn btn-outline btn-sm" onclick="clearFile()" style="flex:none">&#x2715;</button>
+        </div>
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" id="cloneBtn" onclick="doClone()" disabled>
+            &#x2728; 开始克隆声音
+          </button>
+        </div>
+        <div class="loading-overlay" id="cloneLoading" style="display:none">
+          <div class="spinner"></div>
+          <span style="font-size:13px">正在克隆声音，请稍候...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TTS Section (shown when clone is ready) -->
+    <div class="section" id="ttsSection">
+      <div class="card">
+        <div class="card-title">
+          <span class="icon" style="background:rgba(34,197,94,.2)">&#x1F4DD;</span>
+          文字转语音
+        </div>
+        <textarea id="ttsText" placeholder="输入要转换的文字...&#10;&#10;支持中英文，最多 5000 字"></textarea>
+        <div class="controls-row">
+          <div class="speed-control">
+            <span>语速</span>
+            <input type="range" id="speedRange" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('speedVal').textContent=this.value+'x'">
+            <span id="speedVal">1.0x</span>
+          </div>
+          <span class="char-count" id="charCount">0 字</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="generateBtn" onclick="doTTS()">
+            &#x1F50A; 生成语音
+          </button>
+        </div>
+        <div id="ttsResult" style="display:none">
+          <div class="audio-player">
+            <audio id="resultAudio" controls></audio>
+          </div>
+          <div class="btn-row" style="margin-top:12px">
+            <button class="btn btn-outline btn-sm" onclick="downloadAudio()">&#x2B07;&#xFE0F; 下载 MP3</button>
+            <button class="btn btn-outline btn-sm" onclick="doTTS()">&#x1F504; 重新生成</button>
+          </div>
+        </div>
+        <div class="loading-overlay" id="ttsLoading" style="display:none">
+          <div class="spinner"></div>
+          <span style="font-size:13px">正在生成语音...</span>
+        </div>
+      </div>
+
+      <!-- Demo audio (from clone) -->
+      <div class="card" id="demoCard" style="display:none">
+        <div class="card-title">
+          <span class="icon" style="background:rgba(96,165,250,.2)">&#x1F3A7;</span>
+          克隆预览
+        </div>
+        <div class="preview-audio">
+          <audio id="demoAudio" controls></audio>
+        </div>
+      </div>
+
+      <!-- Delete clone -->
+      <div style="text-align:center;margin-top:8px">
+        <button class="btn btn-danger btn-sm" onclick="doDeleteClone()">&#x1F5D1;&#xFE0F; 删除克隆声音</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ========== STATE ==========
+let currentUser = null;
+let voiceClone = null; // { voice_id, demo_url, status, created_at }
+let selectedFile = null;
+let currentAudioUrl = null;
+
+// ========== INIT ==========
+window.addEventListener('DOMContentLoaded', () => {
+  // Check URL params for auto-login
+  const params = new URLSearchParams(location.search);
+  const u = params.get('u');
+  if (u) {
+    document.getElementById('loginUsername').value = u;
+  }
+  // Textarea char count
+  document.getElementById('ttsText').addEventListener('input', function() {
+    document.getElementById('charCount').textContent = this.value.length + ' 字';
+  });
+  // Drag and drop
+  const area = document.getElementById('uploadArea');
+  area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragover'); });
+  area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+  area.addEventListener('drop', e => {
+    e.preventDefault();
+    area.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      document.getElementById('audioFile').files = e.dataTransfer.files;
+      onFileSelect(document.getElementById('audioFile'));
+    }
+  });
+  // Enter key on password
+  document.getElementById('loginPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+});
+
+// ========== AUTH ==========
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!username || !password) return toast('请填写用户名和密码', 'error');
+
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 登录中...';
+
+  try {
+    const resp = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, deviceId: 'voice_' + navigator.userAgent.slice(0, 32) })
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      toast(data.error || '登录失败', 'error');
+      btn.disabled = false;
+      btn.textContent = '登录';
+      return;
+    }
+    currentUser = username;
+    showMainUI();
+    loadVoiceStatus();
+  } catch (e) {
+    toast('网络错误', 'error');
+    btn.disabled = false;
+    btn.textContent = '登录';
+  }
+}
+
+function doLogout() {
+  currentUser = null;
+  voiceClone = null;
+  document.getElementById('loginSection').classList.add('active');
+  document.getElementById('userBar').style.display = 'none';
+  document.getElementById('mainContent').style.display = 'none';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginBtn').disabled = false;
+  document.getElementById('loginBtn').textContent = '登录';
+}
+
+function showMainUI() {
+  document.getElementById('loginSection').classList.remove('active');
+  document.getElementById('userBar').style.display = 'flex';
+  document.getElementById('mainContent').style.display = 'block';
+  document.getElementById('userDisplay').textContent = '&#x1F464; ' + currentUser;
+}
+
+// ========== VOICE STATUS ==========
+async function loadVoiceStatus() {
+  try {
+    const resp = await fetch('/api/voice/status?username=' + encodeURIComponent(currentUser));
+    const data = await resp.json();
+
+    if (data.ok && data.cloned) {
+      voiceClone = data.voice;
+      showCloneReady();
+    } else {
+      voiceClone = null;
+      showNoClone();
+    }
+  } catch (e) {
+    toast('获取状态失败', 'error');
+  }
+}
+
+function showNoClone() {
+  document.getElementById('statusBadge').innerHTML = '<span class="status-badge status-none"><span class="dot"></span>未克隆</span>';
+  document.getElementById('statusContent').innerHTML = '<p style="font-size:13px;color:rgba(255,255,255,.5)">上传一段你的声音样本，即可创建专属 AI 克隆声音</p>';
+  document.getElementById('uploadSection').classList.add('active');
+  document.getElementById('ttsSection').classList.remove('active');
+}
+
+function showCloneReady() {
+  const d = voiceClone.created_at ? new Date(voiceClone.created_at).toLocaleDateString('zh-CN') : '';
+  document.getElementById('statusBadge').innerHTML = '<span class="status-badge status-ready"><span class="dot"></span>已就绪</span>';
+  document.getElementById('statusContent').innerHTML = '<p style="font-size:13px;color:rgba(255,255,255,.5)">克隆于 ' + d + ' · 可以直接输入文字生成语音</p>';
+  document.getElementById('uploadSection').classList.remove('active');
+  document.getElementById('ttsSection').classList.add('active');
+
+  // Show demo audio if available
+  if (voiceClone.demo_url) {
+    document.getElementById('demoCard').style.display = 'block';
+    document.getElementById('demoAudio').src = voiceClone.demo_url;
+  } else {
+    document.getElementById('demoCard').style.display = 'none';
+  }
+}
+
+// ========== FILE SELECT ==========
+function onFileSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['mp3', 'm4a', 'wav'].includes(ext)) {
+    toast('仅支持 mp3/m4a/wav 格式', 'error');
+    input.value = '';
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    toast('文件不能超过 20MB', 'error');
+    input.value = '';
+    return;
+  }
+
+  selectedFile = file;
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = (file.size / 1024 / 1024).toFixed(1) + ' MB';
+  document.getElementById('fileInfo').style.display = 'flex';
+  document.getElementById('cloneBtn').disabled = false;
+}
+
+function clearFile() {
+  selectedFile = null;
+  document.getElementById('audioFile').value = '';
+  document.getElementById('fileInfo').style.display = 'none';
+  document.getElementById('cloneBtn').disabled = true;
+}
+
+// ========== CLONE ==========
+async function doClone() {
+  if (!selectedFile || !currentUser) return;
+
+  const btn = document.getElementById('cloneBtn');
+  btn.disabled = true;
+  document.getElementById('cloneLoading').style.display = 'flex';
+
+  const fd = new FormData();
+  fd.append('audio', selectedFile);
+  fd.append('username', currentUser);
+
+  try {
+    const resp = await fetch('/api/voice/clone', { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    if (data.ok) {
+      voiceClone = data.voice;
+      toast('声音克隆成功!', 'success');
+      loadVoiceStatus();
+    } else {
+      toast(data.error || '克隆失败', 'error');
+      btn.disabled = false;
+    }
+  } catch (e) {
+    toast('网络错误', 'error');
+    btn.disabled = false;
+  } finally {
+    document.getElementById('cloneLoading').style.display = 'none';
+  }
+}
+
+// ========== TTS ==========
+async function doTTS() {
+  const text = document.getElementById('ttsText').value.trim();
+  if (!text) return toast('请输入要转换的文字', 'error');
+
+  const speed = parseFloat(document.getElementById('speedRange').value);
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 生成中...';
+  document.getElementById('ttsLoading').style.display = 'flex';
+  document.getElementById('ttsResult').style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/voice/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: currentUser, text, speed })
+    });
+    const data = await resp.json();
+
+    if (data.ok && data.audio_url) {
+      currentAudioUrl = data.audio_url;
+      document.getElementById('resultAudio').src = currentAudioUrl;
+      document.getElementById('ttsResult').style.display = 'block';
+      toast('语音生成成功!', 'success');
+    } else {
+      toast(data.error || '生成失败', 'error');
+    }
+  } catch (e) {
+    toast('网络错误', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F50A; 生成语音';
+    document.getElementById('ttsLoading').style.display = 'none';
+  }
+}
+
+// ========== DOWNLOAD ==========
+function downloadAudio() {
+  if (!currentAudioUrl) return;
+  const a = document.createElement('a');
+  a.href = currentAudioUrl;
+  a.download = 'voice_' + Date.now() + '.mp3';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ========== DELETE CLONE ==========
+async function doDeleteClone() {
+  if (!confirm('确定删除克隆声音？删除后可以重新上传克隆。')) return;
+
+  try {
+    const resp = await fetch('/api/voice/clone', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: currentUser })
+    });
+    const data = await resp.json();
+
+    if (data.ok) {
+      voiceClone = null;
+      currentAudioUrl = null;
+      toast('已删除克隆声音', 'success');
+      loadVoiceStatus();
+    } else {
+      toast(data.error || '删除失败', 'error');
+    }
+  } catch (e) {
+    toast('网络错误', 'error');
+  }
+}
+
+// ========== TOAST ==========
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast toast-' + (type || 'info') + ' show';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
