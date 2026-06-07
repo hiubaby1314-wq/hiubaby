@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片多视角生成</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --bg: #0c0c14; --surface: #16162a; --surface2: #1e1e36;
+      --border: #2a2a4a; --text: #e8e8f0; --text-muted: #8888aa;
+      --accent: #7c5cfc; --accent2: #5c9cfc; --danger: #fc5c7c;
+      --success: #4cda8a;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .app { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .header { text-align: center; padding: 20px 0 24px; }
+    .logo { font-size: 40px; margin-bottom: 8px; }
+    .header h1 { font-size: 24px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .desc { color: var(--text-muted); font-size: 13px; margin-top: 6px; }
+    .main { display: grid; grid-template-columns: 380px 1fr; gap: 20px; }
+    @media (max-width: 800px) { .main { grid-template-columns: 1fr; } }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
+    .section { margin-bottom: 16px; }
+    .section-title { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .upload-area { position: relative; border: 2px dashed var(--border); border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.3s; min-height: 120px; display: flex; align-items: center; justify-content: center; }
+    .upload-area:hover { border-color: var(--accent); background: rgba(124,92,252,0.05); }
+    .upload-area.has-image { padding: 8px; border-style: solid; }
+    .upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-muted); }
+    .upload-icon { font-size: 28px; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--surface2); border-radius: 12px; font-weight: 300; }
+    .preview-img { max-width: 100%; max-height: 200px; border-radius: 8px; object-fit: contain; }
+    .remove-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: #fff; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+    textarea { width: 100%; min-height: 100px; padding: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 14px; font-family: inherit; resize: vertical; transition: border-color 0.2s; }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .options-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .option-group { display: flex; flex-direction: column; }
+    .option-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    select { width: 100%; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+    select:focus { outline: none; border-color: var(--accent); }
+    .price-info { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; padding: 8px 12px; background: var(--surface2); border-radius: 8px; text-align: center; }
+    .usage-info { font-size: 13px; color: var(--accent2); margin-bottom: 12px; padding: 10px 12px; background: rgba(92,156,252,0.1); border: 1px solid rgba(92,156,252,0.2); border-radius: 8px; text-align: center; font-weight: 500; }
+    .usage-info.warning { color: var(--danger); background: rgba(252,92,124,0.1); border-color: rgba(252,92,124,0.2); }
+    .generate-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; position: relative; overflow: hidden; }
+    .generate-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,92,252,0.3); }
+    .generate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .status-bar { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; display: none; }
+    .status-bar.info { display: block; background: rgba(92,156,252,0.1); color: var(--accent2); border: 1px solid rgba(92,156,252,0.2); }
+    .status-bar.success { display: block; background: rgba(76,218,138,0.1); color: var(--success); border: 1px solid rgba(76,218,138,0.2); }
+    .status-bar.error { display: block; background: rgba(252,92,124,0.1); color: var(--danger); border: 1px solid rgba(252,92,124,0.2); }
+    .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .results-header h3 { font-size: 16px; font-weight: 600; }
+    .download-all-btn { padding: 6px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer; transition: all 0.2s; }
+    .download-all-btn:hover { background: var(--accent); border-color: var(--accent); }
+    .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; min-height: 200px; }
+    .empty-state { grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text-muted); text-align: center; }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+    .result-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: all 0.3s; animation: fadeIn 0.5s ease; }
+    .result-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .result-card img { width: 100%; display: block; cursor: pointer; }
+    .result-card .card-actions { padding: 8px; display: flex; gap: 6px; }
+    .result-card .card-actions button { flex: 1; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 11px; cursor: pointer; transition: all 0.2s; }
+    .result-card .card-actions button:hover { background: var(--accent); border-color: var(--accent); }
+    .loading-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; min-height: 200px; }
+    .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .progress-bar { width: 100%; height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+    .model-select { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; cursor: pointer; margin-bottom: 8px; }
+    .model-select:focus { outline: none; border-color: var(--accent); }
+    .model-info { font-size: 12px; color: var(--text-muted); padding: 6px 10px; background: var(--surface2); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .model-info .price { color: var(--success); font-weight: 500; }
+    .progress-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width 0.3s; animation: progress 2s ease-in-out infinite; }
+    @keyframes progress { 0% { width: 10%; } 50% { width: 80%; } 100% { width: 10%; } }
+    .quick-angles { margin-bottom: 16px; }
+    .quick-angles-title { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; letter-spacing: 0.5px; }
+    .quick-angles-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .angle-btn { padding: 7px 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 11px; cursor: pointer; transition: all 0.2s; text-align: center; white-space: nowrap; }
+    .angle-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; transform: translateY(-1px); }
+    .angle-btn:active { transform: scale(0.96); }
+    .four-view-btn { width: 100%; margin-top: 8px; padding: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .four-view-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(124,92,252,0.3); }
+    .four-view-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .angle-btn .angle-icon { display: block; font-size: 16px; margin-bottom: 2px; }
+    .history-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border); }
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .history-header h3 { font-size: 16px; font-weight: 600; color: var(--text-muted); }
+    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .history-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; cursor: pointer; transition: all 0.2s; }
+    .history-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .history-card img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+    .history-card-info { padding: 8px 10px; }
+    .history-card-prompt { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-card-time { font-size: 10px; color: var(--text-muted); opacity: 0.7; margin-top: 2px; }
+    .history-empty { text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="logo">📷</div>
+      <h1>图片多视角生成</h1>
+      <p class="desc">基于万相大模型，从一张图片生成多个不同视角的图片</p>
+    </div>
+    <div class="main">
+      <div class="panel left-panel">
+        <div class="section">
+          <label class="section-title">参考图片（必填）</label>
+          <div class="upload-area" id="uploadArea">
+            <input type="file" id="imageInput" accept="image/*" hidden>
+            <div class="upload-placeholder" id="uploadPlaceholder">
+              <span class="upload-icon">+</span>
+              <span>点击上传参考图片</span>
+            </div>
+            <img id="previewImg" class="preview-img" style="display:none">
+            <button class="remove-btn" id="removeBtn" style="display:none" onclick="event.stopPropagation();removeImage()">✕</button>
+          </div>
+        </div>
+        <div class="section">
+          <label class="section-title">提示词 *</label>
+          <textarea id="promptInput" placeholder="描述视角变化指令...&#10;&#10;例如：将图片转换为左侧面视角，保持角色特征和风格一致"></textarea>
+        </div>
+        <div class="quick-angles">
+          <div class="quick-angles-title">快捷视角</div>
+          <div class="quick-angles-grid">
+            <button class="angle-btn" onclick="fillAngle('将图片转换为正面视角，保持角色特征和风格一致')"><span class="angle-icon">🧑</span>正面</button>
+            <button class="angle-btn" onclick="fillAngle('将图片转换为3/4侧面视角，保持角色特征和风格一致')"><span class="angle-icon">↗️</span>3/4侧面</button>
+            <button class="angle-btn" onclick="fillAngle('将图片转换为左侧面视角，保持角色特征和风格一致')"><span class="angle-icon">👈</span>左侧面</button>
+            <button class="angle-btn" onclick="fillAngle('将图片转换为右侧面视角，保持角色特征和风格一致')"><span class="angle-icon">👉</span>右侧面</button>
+            <button class="angle-btn" onclick="fillAngle('将图片转换为背面视角，保持角色特征和风格一致')"><span class="angle-icon">🔙</span>背面</button>
+            <button class="angle-btn" onclick="fillAngle('将图片转换为俯视视角，保持角色特征和风格一致')"><span class="angle-icon">⬇️</span>俯视</button>
+            <button class="angle-btn" onclick="fillAngle('将图片转换为仰视视角，保持角色特征和风格一致')"><span class="angle-icon">⬆️</span>仰视</button>
+          </div>
+        </div>
+        <button class="four-view-btn" id="fourViewBtn" onclick="startFourView()">🎯 一键生成四视图（正面 / 3/4侧面 / 侧面 / 背面）</button>
+        <div class="section">
+          <label class="section-title">选择模型</label>
+          <select id="modelSelect" class="model-select">
+          </select>
+          <div class="model-info" id="modelInfo"></div>
+        </div>
+        <div class="usage-info" id="usageInfo">今日免费次数：加载中...</div>
+        <button class="generate-btn" id="generateBtn" onclick="startGenerate()">
+          <span id="btnText">开始生成</span>
+          <span id="btnLoading" style="display:none">生成中...</span>
+        </button>
+        <div class="status-bar" id="statusBar"></div>
+      </div>
+      <div class="panel right-panel">
+        <div class="results-header">
+          <h3>生成结果</h3>
+          <button class="download-all-btn" id="downloadAllBtn" style="display:none" onclick="downloadAll()">下载全部</button>
+        </div>
+        <div class="results-grid" id="resultsGrid">
+          <div class="empty-state">
+            <div class="empty-icon">🎨</div>
+            <p>上传图片并输入提示词后<br>点击"开始生成"</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="history-section">
+      <div class="history-header">
+        <h3>生成历史（保留7天）</h3>
+      </div>
+      <div class="history-grid" id="historyGrid">
+        <div class="history-empty">加载中...</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Get username from URL
+    const params = new URLSearchParams(window.location.search);
+    const username = params.get('u') || '';
+    const authToken = params.get('t') || '';
+
+    // State
+    let uploadedImageUrl = null;
+    let generatedImages = [];
+    let wanUsage = null;
+    let modelsData = null;
+
+    // DOM elements
+    const uploadArea = document.getElementById('uploadArea');
+    const imageInput = document.getElementById('imageInput');
+    const uploadPlaceholder = document.getElementById('uploadPlaceholder');
+    const previewImg = document.getElementById('previewImg');
+    const removeBtn = document.getElementById('removeBtn');
+    const promptInput = document.getElementById('promptInput');
+    const usageInfo = document.getElementById('usageInfo');
+    const generateBtn = document.getElementById('generateBtn');
+    const btnText = document.getElementById('btnText');
+    const btnLoading = document.getElementById('btnLoading');
+    const statusBar = document.getElementById('statusBar');
+    const resultsGrid = document.getElementById('resultsGrid');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+    // 载入模型列表和用量
+    async function loadModels() {
+      if (!username) {
+        usageInfo.textContent = '请先登录';
+        usageInfo.classList.add('warning');
+        return;
+      }
+      try {
+        // 载入模型列表
+        const modelsResp = await fetch('/api/ai/wan/models');
+        modelsData = await modelsResp.json();
+        
+        // 填充模型选择器（不显示次数）
+        const modelSelect = document.getElementById('modelSelect');
+        modelSelect.innerHTML = '';
+        for (const [key, model] of Object.entries(modelsData)) {
+          const option = document.createElement('option');
+          option.value = key;
+          option.textContent = model.label;
+          modelSelect.appendChild(option);
+        }
+        
+        // 载入用量
+        await checkUsage();
+        
+        // 綁定模型切換事件
+        modelSelect.addEventListener('change', () => {
+          updateModelInfo();
+          updateUsageDisplay();
+        });
+        updateModelInfo();
+        
+      } catch (err) {
+        usageInfo.textContent = '无法获取模型信息';
+        usageInfo.classList.add('warning');
+      }
+    }
+    
+    // 檢查用量
+    async function checkUsage() {
+      try {
+        const resp = await fetch('/api/ai/wan/usage', {
+          headers: authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : { 'X-Username': username }
+        });
+        const data = await resp.json();
+        wanUsage = data;
+        updateUsageDisplay();
+      } catch (err) {
+        usageInfo.textContent = '无法获取使用次数';
+        usageInfo.classList.add('warning');
+      }
+    }
+    
+    // 更新模型資訊顯示
+    function updateModelInfo() {
+      const modelKey = document.getElementById('modelSelect').value;
+      if (!wanUsage || !wanUsage.models || !wanUsage.models[modelKey]) return;
+      
+      const modelInfo = wanUsage.models[modelKey];
+      const infoDiv = document.getElementById('modelInfo');
+      infoDiv.innerHTML = `剩余 <strong>${modelInfo.remaining}/${modelInfo.limit}</strong> 次`;
+    }
+
+    function updateUsageDisplay() {
+      const modelKey = document.getElementById('modelSelect').value;
+      if (!wanUsage || !wanUsage.models || !wanUsage.models[modelKey]) {
+        usageInfo.textContent = '无法获取使用次数';
+        usageInfo.classList.add('warning');
+        return;
+      }
+      
+      const modelInfo = wanUsage.models[modelKey];
+      if (modelInfo.remaining <= 0) {
+        usageInfo.textContent = `${modelInfo.label} 今日已用完（${modelInfo.used}/${modelInfo.limit}）`;
+        usageInfo.classList.add('warning');
+        generateBtn.disabled = true;
+      } else {
+        usageInfo.textContent = `${modelInfo.label}：剩余 ${modelInfo.remaining}/${modelInfo.limit} 次`;
+        usageInfo.classList.remove('warning');
+        generateBtn.disabled = false;
+      }
+      updateModelInfo();
+    }
+
+    loadModels();
+
+    // Upload area click
+    uploadArea.addEventListener('click', () => {
+      if (!uploadedImageUrl) imageInput.click();
+    });
+
+    imageInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) { showStatus('图片大小不能超过10MB', 'error'); return; }
+
+      // Show preview locally
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        previewImg.src = ev.target.result;
+        previewImg.style.display = 'block';
+        uploadPlaceholder.style.display = 'none';
+        removeBtn.style.display = 'flex';
+        uploadArea.classList.add('has-image');
+      };
+      reader.readAsDataURL(file);
+
+      // Upload to server for hosting
+      try {
+        showStatus('正在上传参考图片...', 'info');
+        const formData = new FormData();
+        formData.append('image', file);
+        const resp = await fetch('/api/ai/host-image', {
+          method: 'POST',
+          headers: authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : {},
+          body: formData
+        });
+        const data = await resp.json();
+        if (data.url) {
+          uploadedImageUrl = data.url;
+          showStatus('参考图片已上传', 'success');
+        } else {
+          showStatus('图片上传失败: ' + (data.error || '未知错误'), 'error');
+          removeImage();
+        }
+      } catch (err) {
+        showStatus('图片上传失败: ' + err.message, 'error');
+        removeImage();
+      }
+    });
+
+    function removeImage() {
+      uploadedImageUrl = null;
+      previewImg.style.display = 'none';
+      previewImg.src = '';
+      uploadPlaceholder.style.display = 'flex';
+      removeBtn.style.display = 'none';
+      uploadArea.classList.remove('has-image');
+      imageInput.value = '';
+    }
+
+
+    function fillAngle(angle) {
+      promptInput.value = angle;
+      promptInput.focus();
+      promptInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function showStatus(msg, type) {
+      statusBar.textContent = msg;
+      statusBar.className = 'status-bar ' + (type || 'info');
+    }
+
+    function hideStatus() {
+      statusBar.className = 'status-bar';
+      statusBar.style.display = 'none';
+    }
+
+    async function startGenerate() {
+      const prompt = promptInput.value.trim();
+      if (!prompt) { showStatus('请输入提示词', 'error'); return; }
+      if (!username) { showStatus('请先登录（关闭弹窗后重新打开）', 'error'); return; }
+      if (!uploadedImageUrl) { showStatus('请先上传参考图片', 'error'); return; }
+
+      generateBtn.disabled = true;
+      btnText.style.display = 'none';
+      btnLoading.style.display = 'inline';
+
+      // Show loading state in results
+      resultsGrid.innerHTML = '<div class="loading-card" style="grid-column:1/-1"><div style="text-align:center"><div class="spinner"></div><p style="margin-top:12px;color:var(--text-muted);font-size:13px">正在生成图片，请耐心等待...</p><div class="progress-bar" style="margin-top:8px"><div class="progress-bar-inner"></div></div></div></div>';
+      downloadAllBtn.style.display = 'none';
+      generatedImages = [];
+
+      try {
+        const modelKey = document.getElementById('modelSelect').value;
+        const body = {
+          prompt: prompt,
+          model: modelKey,
+          size: '16:9'
+        };
+        if (uploadedImageUrl) {
+          body.image_url = uploadedImageUrl;
+        }
+
+        showStatus('正在生成图片，请耐心等待（通常需要10-30秒）。偶尔会失败，重新生成即可', 'info');
+
+        const resp = await fetch('/api/ai/wan/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : { 'X-Username': username })
+          },
+          body: JSON.stringify(body)
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || data.error) {
+          throw new Error(typeof data.error === 'string' ? data.error : (data.error?.message || '生成失败'));
+        }
+
+        const images = data.images || [];
+        generatedImages = images;
+
+        if (images.length === 0) {
+          showStatus('生成完成但未返回图片', 'error');
+          resetBtn();
+          return;
+        }
+
+        // 更新用量顯示
+        if (data.models) {
+          wanUsage = { models: data.models };
+          updateUsageDisplay();
+        }
+
+        const currentModel = document.getElementById('modelSelect').value;
+        const modelInfo = wanUsage.models[currentModel];
+        showStatus('生成完成！' + modelInfo.label + '：剩余 ' + modelInfo.remaining + '/' + modelInfo.limit + ' 次', 'success');
+        resetBtn();
+        downloadAllBtn.style.display = 'block';
+
+        // Render results
+        resultsGrid.innerHTML = '';
+        images.forEach((url, idx) => {
+          const card = document.createElement('div');
+          card.className = 'result-card';
+          card.style.animationDelay = (idx * 0.1) + 's';
+          card.innerHTML = '<img src="' + url + '" alt="生成图片 ' + (idx+1) + '" loading="lazy" onclick="window.open(this.src)">' +
+            '<div class="card-actions"><button onclick="downloadImage(\'' + url + '\',' + (idx+1) + ')">下载</button><button onclick="window.open(\'' + url + '\')">查看原图</button></div>';
+          resultsGrid.appendChild(card);
+        });
+
+      } catch (err) {
+        showStatus('生成失败: ' + err.message, 'error');
+        resetBtn();
+        resultsGrid.innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>生成失败<br>' + err.message + '</p></div>';
+      }
+    }
+
+    async function startFourView() {
+      if (!uploadedImageUrl) { showStatus('请先上传参考图片', 'error'); return; }
+      if (!username) { showStatus('请先登录', 'error'); return; }
+      promptInput.value = '严格基于参考图片中的角色/物体，生成一张包含四个视角的图片。从左到右依次是：正面视角、3/4侧面视角、左侧面视角、背面视角。必须保持参考图片中的角色外观、服装、颜色、风格完全一致，仅改变拍摄角度。每个视角之间用竖线分隔，背景统一为白色。';
+      await startGenerate();
+    }
+
+    async function downloadImage(url, idx) {
+      try {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'multiview_' + idx + '.png';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (err) {
+        window.open(url, '_blank');
+      }
+    }
+
+    async function downloadAll() {
+      for (let i = 0; i < generatedImages.length; i++) {
+        await downloadImage(generatedImages[i], i + 1);
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    function resetBtn() {
+      generateBtn.disabled = false;
+      btnText.style.display = 'inline';
+      btnLoading.style.display = 'none';
+    }
+
+    // Load history
+    async function loadHistory() {
+      if (!username) return;
+      try {
+        const resp = await fetch('/api/ai/wan/history?limit=20', {
+          headers: authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : { 'X-Username': username }
+        });
+        const data = await resp.json();
+        renderHistory(data.records || []);
+      } catch (e) {
+        console.error('History load error:', e);
+      }
+    }
+
+    function renderHistory(records) {
+      const grid = document.getElementById('historyGrid');
+      if (!records.length) {
+        grid.innerHTML = '<div class="history-empty">暂无生成记录</div>';
+        return;
+      }
+      grid.innerHTML = records.map(r => {
+        const imgs = r.output_images || [];
+        const thumb = imgs[0] || '';
+        const time = new Date(r.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const safePrompt = (r.prompt || '').replace(/</g, '&lt;').replace(/'/g, '&#39;');
+        return '<div class="history-card" onclick="window.open(this.dataset.url)" data-url="' + thumb + '">' +
+          '<img src="' + thumb + '" alt="" loading="lazy">' +
+          '<div class="history-card-info">' +
+          '<div class="history-card-prompt">' + safePrompt + '</div>' +
+          '<div class="history-card-time">' + time + '</div>' +
+          '</div></div>';
+      }).join('');
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
