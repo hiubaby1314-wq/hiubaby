@@ -333,42 +333,31 @@ async function downloadFromR2(key) {
 
 async function uploadToR2(key, buffer, contentType = 'application/octet-stream') {
   try {
-    if (!s3Client) throw new Error('R2 client not configured');
-    const { PutObjectCommand } = s3Client;
-    const cmd = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: contentType });
-    await s3Client.client.send(cmd);
-    const url = `${R2_PUBLIC_URL}/${key}`;
+    const filename = path.basename(key);
+    const uploadDir = path.join(__dirname, 'public', 'uploads');
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const filePath = path.join(uploadDir, filename);
+    fs.writeFileSync(filePath, buffer);
+    const url = `/uploads/${filename}`;
+    console.log(`[LocalStorage] Saved: ${filename} (${buffer.length} bytes)`);
     return url;
   } catch (e) {
-    console.log('R2 upload error:', e.message);
+    console.error('[LocalStorage] Upload error:', e.message);
     throw e;
   }
 }
 
 async function deleteFromR2(url) {
-  if (!cosClient) return;
-  let key = url;
-  if (url.startsWith('http')) {
-    const prefix = R2_PUBLIC_URL + '/';
-    if (!url.startsWith(prefix)) {
-      console.warn('deleteFromR2: URL not from our bucket, skipping:', url);
-      return;
-    }
-    key = url.slice(prefix.length);
-  }
+  if (!url || !url.startsWith('/uploads/')) return;
   try {
-    await new Promise((resolve, reject) => {
-      cosClient.deleteObject({
-        Bucket: R2_BUCKET,
-        Region: process.env.COS_REGION || 'ap-hongkong',
-        Key: key
-      }, (err, data) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-  } catch(e) {
-    console.error('R2 delete error:', e.message, 'key:', key);
+    const filename = path.basename(url);
+    const filePath = path.join(__dirname, 'public', 'uploads', filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`[LocalStorage] Deleted: ${filename}`);
+    }
+  } catch (e) {
+    console.error('[LocalStorage] Delete error:', e.message);
   }
 }
 
