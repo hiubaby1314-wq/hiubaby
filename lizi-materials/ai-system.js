@@ -1284,11 +1284,11 @@ router.delete('/admin/generations/:id', authMiddleware, (req, res) => {
 
 
 // === 智增增 API 代理（Gemini 专用，保留原有配置）===
-const ZZ_API_KEY = process.env.ZZ_API_KEY || 'sk-zk21a2660d7104b3c7cc3ad7404326f5a3a6a22b4daacfbc';
+const ZZ_API_KEY = process.env.ZZ_API_KEY || '';
 const ZZ_BASE_URL = 'https://api2.aigcbest.top';
 
 // === api2.aigcbest.top 代理（图像生成，OpenAI 兼容格式）===
-const AIGCBEST_API_KEY = process.env.AIGCBEST_API_KEY || 'sk-RL3e5gM2Y9lGy2nlDjLEq8MFdwfF9qEvzsyOfAQGYkvGDXzE';
+const AIGCBEST_API_KEY = process.env.AIGCBEST_API_KEY || '';
 const AIGCBEST_BASE_URL = 'https://api2.aigcbest.top';
 
 // 图像生成代理：转发到 api2.aigcbest.top（OpenAI /v1/images/generations 兼容格式）
