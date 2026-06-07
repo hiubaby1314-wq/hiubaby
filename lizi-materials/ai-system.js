@@ -1003,7 +1003,7 @@ router.post('/generate/settle', authMiddleware, (req, res) => {
 });
 
 // === 豆包 Seedance 视频代理 ===
-const ZHIZENGZENG_API_KEY = 'sk-zk213c532912552ad699d8575d28e0d0f286a1f8fa7e0a28';
+const ZHIZENGZENG_API_KEY = process.env.ZHIZENGZENG_API_KEY || '';
 const ZHIZENGZENG_BASE_URL = 'https://api2.aigcbest.top';
 
 // 提交视频生成任务
