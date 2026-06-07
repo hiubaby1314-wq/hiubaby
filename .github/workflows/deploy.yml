@@ -29,18 +29,19 @@ jobs:
             echo "🚀 Starting deployment - $(date)"
             echo "======================================"
 
-            # Pull latest code from GitHub
-            echo "[1/4] Pulling latest code..."
-            git -C /opt/hiubaby pull origin main
-            echo "  ✓ Code updated"
+            # Fetch + hard reset (handles any local drift)
+            echo "[1/4] Syncing code..."
+            git -C /opt/hiubaby fetch origin main
+            git -C /opt/hiubaby reset --hard origin/main
+            echo "  ✓ Code synced to latest"
 
-            # Update dependencies if package.json changed
-            echo "[2/4] Updating Node.js dependencies..."
+            # Update dependencies
+            echo "[2/4] Updating dependencies..."
             cd /opt/hiubaby/lizi-materials
             npm ci --production --prefer-offline 2>&1 | tail -5
             echo "  ✓ Dependencies ready"
 
-            # Gracefully reload app via PM2 (zero-downtime)
+            # Graceful PM2 reload (zero-downtime)
             echo "[3/4] Reloading app via PM2..."
             pm2 reload lizi-materials --update-env
             echo "  ✓ App reloaded"
