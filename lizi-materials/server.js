@@ -25,7 +25,23 @@ function toSimplified(text) {
 const helmet = require('helmet');
 const app = express();
 app.set("trust proxy", "loopback"); // Trust only local Nginx proxy
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:  ["'self'"],
+      scriptSrc:   ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc:      ["'self'", "data:", "blob:", "https:"],
+      connectSrc:  ["'self'", "https:"],
+      fontSrc:     ["'self'", "https:", "data:"],
+      objectSrc:   ["'none'"],
+      baseUri:     ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  permissionsPolicy: false,
+}));
 // Advanced Hardening: Logging
 app.use(morgan('combined'));
 
