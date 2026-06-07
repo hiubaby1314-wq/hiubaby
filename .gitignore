@@ -12,3 +12,7 @@ logs/
 
 # Node
 node_modules/
+.ssh/
+lizi-backups/
+lizi-materials-new/
+*.bak.*

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lizi-v2';
+const CACHE_NAME = "lizi-v7";
 const OFFLINE_URL = '/';
 
 const PRECACHE_URLS = [

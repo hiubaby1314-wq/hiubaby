@@ -37,12 +37,12 @@ const MODEL_PRICING = {
   'grok-imagine-image-pro': 0.508,
   'grok-imagine-image': 0.145,
   // === 字节豆包 Seedream / SeedEdit 文生图/图生图 (已为人民币) ===
-  'doubao-seedream-5-0-lite-250612': 0.22,
-  'doubao-seedream-5-0-250612': 0.22,
+  // [UNAVAILABLE] 'doubao-seedream-5-0-lite-250612': 0.22,
+  // [UNAVAILABLE] 'doubao-seedream-5-0-250612': 0.22,
   'doubao-seedream-4-5-251128': 0.25,
   'doubao-seedream-4-0-250828': 0.20,
   'doubao-seededit-3-0-i2i-250628': 0.30,
-  'doubao-seedream-3-0-t2i-250415': 0.259,
+  // [UNAVAILABLE] 'doubao-seedream-3-0-t2i-250415': 0.259,
   // === 视频生成模型 ===
   // Sora 2
   'sora-2': { '720p-4s': 2.90, '720p-8s': 5.80, '720p-12s': 8.70 },
@@ -1004,7 +1004,7 @@ router.post('/generate/settle', authMiddleware, (req, res) => {
 
 // === 豆包 Seedance 视频代理 ===
 const ZHIZENGZENG_API_KEY = 'sk-zk213c532912552ad699d8575d28e0d0f286a1f8fa7e0a28';
-const ZHIZENGZENG_BASE_URL = 'https://api.zhizengzeng.com';
+const ZHIZENGZENG_BASE_URL = 'https://api2.aigcbest.top';
 
 // 提交视频生成任务
 router.post('/seedance/generate', authMiddleware, async (req, res) => {
@@ -1284,11 +1284,11 @@ router.delete('/admin/generations/:id', authMiddleware, (req, res) => {
 
 
 // === 智增增 API 代理（Gemini 专用，保留原有配置）===
-const ZZ_API_KEY = 'sk-zk21a2660d7104b3c7cc3ad7404326f5a3a6a22b4daacfbc';
-const ZZ_BASE_URL = 'https://api.zhizengzeng.com';
+const ZZ_API_KEY = process.env.ZZ_API_KEY || 'sk-zk21a2660d7104b3c7cc3ad7404326f5a3a6a22b4daacfbc';
+const ZZ_BASE_URL = 'https://api2.aigcbest.top';
 
 // === api2.aigcbest.top 代理（图像生成，OpenAI 兼容格式）===
-const AIGCBEST_API_KEY = 'sk-RL3e5gM2Y9lGy2nlDjLEq8MFdwfF9qEvzsyOfAQGYkvGDXzE';
+const AIGCBEST_API_KEY = process.env.AIGCBEST_API_KEY || 'sk-RL3e5gM2Y9lGy2nlDjLEq8MFdwfF9qEvzsyOfAQGYkvGDXzE';
 const AIGCBEST_BASE_URL = 'https://api2.aigcbest.top';
 
 // 图像生成代理：转发到 api2.aigcbest.top（OpenAI /v1/images/generations 兼容格式）
