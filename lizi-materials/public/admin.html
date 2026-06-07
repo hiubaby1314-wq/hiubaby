@@ -1,4 +1,16 @@
-<!DOCTYPE html>
+
+    // XSS 防護：HTML 轉義函數
+    function escHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
+    }
+
+!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -278,7 +290,7 @@
         tbody.innerHTML = users.map(u => `
           <tr>
             <td>${u.id}</td>
-            <td>${u.phone}</td>
+            <td>${escHtml(u.phone)}</td>
             <td>¥${u.balance.toFixed(2)}</td>
             <td>${u.free_credits}</td>
             <td>${new Date(u.created_at).toLocaleString('zh-CN')}</td>
@@ -344,11 +356,11 @@
 
         grid.innerHTML = data.generations.map(g => `
           <div class="image-card">
-            <img src="${g.image_url}" alt="Generated image" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22250%22 height=%22250%22><rect fill=%22%23333%22 width=%22250%22 height=%22250%22/><text x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 fill=%22%23999%22>图片加载失败</text></svg>'">
+            <img src="${/^https?:\/\/|^\//.test(g.image_url)?escHtml(g.image_url):''}" alt="Generated image" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22250%22 height=%22250%22><rect fill=%22%23333%22 width=%22250%22 height=%22250%22/><text x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 fill=%22%23999%22>图片加载失败</text></svg>'">
             <div class="image-info">
-              <p class="prompt">${g.prompt}</p>
-              <p class="model">模型: ${g.model}</p>
-              <p>用户: ${g.user_phone || '未知'}</p>
+              <p class="prompt">${escHtml(g.prompt)}</p>
+              <p class="model">模型: ${escHtml(g.model)}</p>
+              <p>用戶: ${escHtml(g.user_phone || '未知')}</p>
               <p>${new Date(g.created_at).toLocaleString('zh-CN')}</p>
               <p>费用: ¥${g.cost.toFixed(2)} ${g.is_free ? '(免费)' : ''}</p>
             </div>
