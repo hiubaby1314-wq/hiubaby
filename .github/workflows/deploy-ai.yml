@@ -1,0 +1,82 @@
+name: Deploy AI Admin to Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ai-admin/**'
+      - '.github/workflows/deploy-ai.yml'
+  workflow_dispatch: # 允許手動觸發部署
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'ai-admin/frontend/package.json'
+
+      - name: Install Frontend Dependencies
+        working-directory: ./ai-admin/frontend
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: ./ai-admin/frontend
+        run: npm run build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Backend to Server
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            cd /opt/hiubaby/lizi-materials
+            mkdir -p ai-admin-backend
+            cd ai-admin-backend
+          EOF
+          
+          # 複製後端檔案到伺服器
+          rsync -avz --delete \
+            ai-admin/backend/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/hiubaby/lizi-materials/ai-admin-backend/
+
+      - name: Install Backend Dependencies & Restart PM2
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            cd /opt/hiubaby/lizi-materials/ai-admin-backend
+            
+            # 如果 .env.production 不存在，則從範例複製 (請先在伺服器上手動建立或透過 GitHub Secrets 傳遞)
+            if [ ! -f .env.production ]; then
+              echo "Warning: .env.production not found. Please create it on the server."
+            fi
+            
+            # 安裝依賴
+            npm ci --production
+            
+            # 使用 PM2 重啟或啟動 AI 後端服務
+            pm2 restart lizi-ai-backend || pm2 start server.js --name lizi-ai-backend --env production
+            
+            # 儲存 PM2 狀態
+            pm2 save
+          EOF
+
+      - name: Deploy Frontend to Server
+        run: |
+          # 將建構好的前端檔案部署到現有網站的 public/ai 目錄
+          rsync -avz --delete \
+            ai-admin/frontend/dist/ \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/hiubaby/lizi-materials/public/ai/
+
+      - name: Deployment Complete
+        run: echo "AI Admin 已成功部署到 https://${{ secrets.SERVER_HOST }}/ai/"
