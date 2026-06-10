@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>栗子AI配音</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            chestnut: {
+              50: '#18181b',
+              100: '#27272a',
+              200: '#3f3f46',
+              300: '#52525b',
+              400: '#a1a1aa',
+              500: '#d4d4d8',
+              600: '#f4f4f5',
+              700: '#ffffff',
+              800: '#ea580c',
+              900: '#f97316',
+              950: '#fdba74',
+            }
+          }
+        }
+      }
+    }
+  </script>
+    <style>
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #3f3f46;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #f97316;
+    }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 h-screen overflow-hidden selection:bg-orange-500/30">
+  <div id="root" class="h-full"></div>
+  <script type="module" src="./index.tsx"></script>
+<script type="module" src="/index.js"></script></body>
+</html>

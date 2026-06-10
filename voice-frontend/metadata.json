@@ -1,0 +1,7 @@
+{
+  "name": "栗子AI配音 (Chestnut AI Voice)",
+  "description": "基於 MiniMax API 的高品質 AI 配音工具，支援語音克隆與歷史紀錄管理。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
