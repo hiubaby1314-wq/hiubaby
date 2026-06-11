@@ -11,7 +11,7 @@ const bcrypt = require('bcrypt');
 const BCRYPT_ROUNDS = 12;
 const { router: aiRouter, initTables: initAITables } = require('./ai-system');
 const cors = require('cors');
-const COS = require("cos-nodejs-sdk-v5");
+// cos-nodejs-sdk-v5 removed — using @aws-sdk/client-s3 for Cloudflare R2
 const { applyWatermark } = require('./watermark');
 
 // Traditional → Simplified Chinese converter
@@ -202,27 +202,25 @@ async function initDB() {
   }
 }
 
-// === R2 Storage ===
+// === R2 Storage (Cloudflare) ===
 let s3Client = null;
-let cosClient = null;
 
 async function initR2() {
   if (!USE_R2) { console.log('R2 not configured. Using local disk.'); return; }
-  const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+  const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
   s3Client = {
     client: new S3Client({
-      region: process.env.COS_REGION || 'ap-hongkong',
-      endpoint: process.env.COS_ENDPOINT || `https://cos.${process.env.COS_REGION || 'ap-hongkong'}.myqcloud.com`,
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
       forcePathStyle: false,
     }),
     PutObjectCommand,
     DeleteObjectCommand,
-    GetObjectCommand
+    GetObjectCommand,
+    ListObjectsV2Command
   };
-  console.log('R2 storage configured.');
-  console.log("COS init - SecretId:", process.env.R2_ACCESS_KEY_ID ? "set" : "missing", "SecretKey:", process.env.R2_SECRET_ACCESS_KEY ? "set (" + process.env.R2_SECRET_ACCESS_KEY.length + " chars)" : "missing");
-  cosClient = new COS({ SecretId: process.env.R2_ACCESS_KEY_ID, SecretKey: process.env.R2_SECRET_ACCESS_KEY });
+  console.log(`R2 storage configured: bucket=${R2_BUCKET}, endpoint=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`);
 }
 
 // === Snapshot: manual save/restore ===
@@ -249,16 +247,14 @@ async function saveSnapshot() {
     fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), 'utf-8');
 
     // Sync snapshot to R2
-    if (USE_R2 && cosClient) {
+    if (USE_R2 && s3Client) {
       const buffer = fs.readFileSync(SNAPSHOT_PATH);
-      await new Promise((resolve, reject) => {
-        cosClient.putObject({
-          Bucket: R2_BUCKET,
-          Region: process.env.COS_REGION || 'ap-hongkong',
-          Key: 'materials-snapshot.json',
-          Body: buffer
-        }, (err) => { if (err) reject(err); else resolve(); });
-      });
+      await s3Client.client.send(new s3Client.PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: 'materials-snapshot.json',
+        Body: buffer,
+        ContentType: 'application/json'
+      }));
     }
     console.log(`Snapshot saved: ${snapshot.length} materials`);
     return snapshot.length;
@@ -326,21 +322,16 @@ async function restoreSnapshot() {
 
 async function downloadFromR2(key) {
   try {
-    if (!cosClient) return null;
-    return await new Promise((resolve, reject) => {
-      cosClient.getObject({
-        Bucket: R2_BUCKET,
-        Region: process.env.COS_REGION || 'ap-hongkong',
-        Key: key
-      }, (err, data) => {
-        if (err) {
-          console.log('COS download error:', err.message);
-          resolve(null);
-        } else {
-          resolve(data.Body);
-        }
-      });
-    });
+    if (!s3Client) return null;
+    const response = await s3Client.client.send(new s3Client.GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key
+    }));
+    const chunks = [];
+    for await (const chunk of response.Body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   } catch (e) {
     console.log('R2 download error:', e.message);
     return null;
@@ -348,7 +339,8 @@ async function downloadFromR2(key) {
 }
 
 async function uploadToR2(key, buffer, contentType = 'application/octet-stream') {
-  try {
+  if (!USE_R2 || !s3Client) {
+    // Fallback: save to local disk if R2 not configured
     const filename = path.basename(key);
     const uploadDir = path.join(__dirname, 'public', 'uploads');
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -357,23 +349,51 @@ async function uploadToR2(key, buffer, contentType = 'application/octet-stream')
     const url = `/uploads/${filename}`;
     console.log(`[LocalStorage] Saved: ${filename} (${buffer.length} bytes)`);
     return url;
+  }
+  try {
+    await s3Client.client.send(new s3Client.PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType
+    }));
+    const url = `${R2_PUBLIC_URL}/${key}`;
+    console.log(`[R2] Uploaded: ${key} (${buffer.length} bytes) -> ${url}`);
+    return url;
   } catch (e) {
-    console.error('[LocalStorage] Upload error:', e.message);
+    console.error('[R2] Upload error:', e.message);
     throw e;
   }
 }
 
 async function deleteFromR2(url) {
-  if (!url || !url.startsWith('/uploads/')) return;
-  try {
-    const filename = path.basename(url);
-    const filePath = path.join(__dirname, 'public', 'uploads', filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`[LocalStorage] Deleted: ${filename}`);
+  if (!url) return;
+  // Handle R2/HTTP URLs
+  if (url.startsWith('http') && USE_R2 && s3Client) {
+    try {
+      const key = url.replace(/^https?:\/\/[^/]+\//, '');
+      await s3Client.client.send(new s3Client.DeleteObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key
+      }));
+      console.log(`[R2] Deleted: ${key}`);
+    } catch (e) {
+      console.error('[R2] Delete error:', e.message);
     }
-  } catch (e) {
-    console.error('[LocalStorage] Delete error:', e.message);
+    return;
+  }
+  // Handle local /uploads/ paths
+  if (url.startsWith('/uploads/')) {
+    try {
+      const filename = path.basename(url);
+      const filePath = path.join(__dirname, 'public', 'uploads', filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[LocalStorage] Deleted: ${filename}`);
+      }
+    } catch (e) {
+      console.error('[LocalStorage] Delete error:', e.message);
+    }
   }
 }
 
@@ -512,28 +532,19 @@ function rewriteR2Url(url) {
 async function syncDB() {
   if (!USE_R2) return;
   try {
-    if (!cosClient || !db) {
-      console.error('DB sync: cosClient or db not initialized');
+    if (!s3Client || !db) {
+      console.error('DB sync: s3Client or db not initialized');
       return;
     }
     db.pragma('wal_checkpoint(TRUNCATE)');
     const buffer = fs.readFileSync(DB_PATH);
-    await new Promise((resolve, reject) => {
-      cosClient.putObject({
-        Bucket: R2_BUCKET,
-        Region: process.env.COS_REGION || 'ap-hongkong',
-        Key: DB_KEY,
-        Body: buffer
-      }, (err, data) => {
-        if (err) {
-          console.error('DB sync failed:', err.message);
-          reject(err);
-        } else {
-          console.log('DB synced to R2 (' + buffer.length + ' bytes)');
-          resolve();
-        }
-      });
-    });
+    await s3Client.client.send(new s3Client.PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: DB_KEY,
+      Body: buffer,
+      ContentType: 'application/octet-stream'
+    }));
+    console.log('DB synced to R2 (' + buffer.length + ' bytes)');
   } catch(e) {
     console.error('DB sync failed:', e.message);
   }
@@ -1170,7 +1181,7 @@ app.post('/api/save-version', requireAuth, requireAdmin, async (req, res) => {
 // === Revert to Stable ===
 app.post('/api/revert-stable', requireAuth, requireAdmin, async (req, res) => {
   
-  if (!USE_R2 || !cosClient) {
+  if (!USE_R2 || !s3Client) {
     return res.json({ ok: false, error: 'R2 未配置，无法恢复' });
   }
   
@@ -1489,24 +1500,18 @@ async function setupDBSync() {
           const newKey = `files/${hash}${f.ext}`;
 
           // Upload to new key
-          await new Promise((resolve, reject) => {
-            cosClient.putObject({
-              Bucket: R2_BUCKET,
-              Region: process.env.COS_REGION || 'ap-hongkong',
-              Key: newKey,
-              Body: fileBuffer,
-              ContentType: f.mime || 'application/octet-stream'
-            }, (err) => { if (err) reject(err); else resolve(); });
-          });
+          await s3Client.client.send(new s3Client.PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: newKey,
+            Body: fileBuffer,
+            ContentType: f.mime || 'application/octet-stream'
+          }));
 
           // Delete old key
-          await new Promise((resolve, reject) => {
-            cosClient.deleteObject({
-              Bucket: R2_BUCKET,
-              Region: process.env.COS_REGION || 'ap-hongkong',
-              Key: key
-            }, (err) => { if (err) reject(err); else resolve(); });
-          });
+          await s3Client.client.send(new s3Client.DeleteObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: key
+          }));
 
           // Update database
           const newUrl = `${R2_PUBLIC_URL}/${newKey}`;
@@ -1560,20 +1565,14 @@ async function setupDBSync() {
       
       if (orphanedMaterials.length > 0) {
         console.log(`Migration: Found ${orphanedMaterials.length} orphaned materials, attempting to recover files from R2...`);
-        const r2Files = await new Promise((resolve, reject) => {
-          cosClient.getBucket({
-            Bucket: R2_BUCKET,
-            Region: process.env.COS_REGION || 'ap-hongkong',
-            Prefix: 'uploads/',
-            MaxKeys: 1000
-          }, (err, data) => {
-            if (err) reject(err);
-            else resolve(data);
-          });
-        });
+        const listResponse = await s3Client.client.send(new s3Client.ListObjectsV2Command({
+          Bucket: R2_BUCKET,
+          Prefix: 'uploads/',
+          MaxKeys: 1000
+        }));
         
         const r2FileMap = {};
-        for (const obj of (r2Files.Contents || [])) {
+        for (const obj of (listResponse.Contents || [])) {
           r2FileMap[obj.Key] = { size: obj.Size, modified: new Date(obj.LastModified) };
         }
         
