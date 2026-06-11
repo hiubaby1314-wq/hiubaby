@@ -7,11 +7,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
-const BCRYPT_ROUNDS = 12;
 const { router: aiRouter, initTables: initAITables } = require('./ai-system');
 const cors = require('cors');
-// cos-nodejs-sdk-v5 removed — using @aws-sdk/client-s3 for Cloudflare R2
 const { applyWatermark } = require('./watermark');
 
 // Traditional → Simplified Chinese converter
@@ -25,23 +22,7 @@ function toSimplified(text) {
 const helmet = require('helmet');
 const app = express();
 app.set("trust proxy", "loopback"); // Trust only local Nginx proxy
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc:  ["'self'"],
-      scriptSrc:   ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      imgSrc:      ["'self'", "data:", "blob:", "https:"],
-      connectSrc:  ["'self'", "https:"],
-      fontSrc:     ["'self'", "https:", "data:"],
-      objectSrc:   ["'none'"],
-      baseUri:     ["'self'"],
-      frameAncestors: ["'none'"],
-    },
-  },
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  permissionsPolicy: false,
-}));
+app.use(helmet({ contentSecurityPolicy: false }));
 // Advanced Hardening: Logging
 app.use(morgan('combined'));
 
@@ -55,13 +36,28 @@ const limiter = rateLimit({
 app.use('/api/', limiter); // Apply rate limit to all API routes
  // Disable CSP to avoid breaking existing frontend inline scripts
 const PORT = process.env.PORT || 3000;
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-2d81719a7aaf43a19e0ac4120399b44f.r2.dev';
-const R2_BUCKET = process.env.R2_BUCKET || '';
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
-const USE_R2 = !!(R2_BUCKET && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
-const DB_KEY = 'lizi.db';
+
+// === 本地檔案存儲 ===
+async function saveToLocal(key, buffer) {
+  const filePath = path.join(__dirname, 'data', key);
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, buffer);
+  return '/data/' + key.replace(/\\/g, '/');
+}
+
+async function deleteFromLocal(filePath) {
+  if (!filePath || !filePath.startsWith('/data/')) return;
+  const fullPath = path.join(__dirname, filePath);
+  try { if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath); } catch(e) {}
+}
+
+async function readFromLocal(filePath) {
+  if (!filePath || !filePath.startsWith('/data/')) return null;
+  const fullPath = path.join(__dirname, filePath);
+  try { return fs.existsSync(fullPath) ? fs.createReadStream(fullPath) : null; } catch(e) { return null; }
+}
+
 const DB_PATH = path.join(__dirname, 'data', 'lizi.db');
 let db;
 let dbReady = true; // false during db close/reopen windows
@@ -157,71 +153,21 @@ async function initDB() {
     db.prepare("INSERT INTO site_settings (key, value) VALUES (?, ?)").run("ai_maintenance", "false");
   }
 
-  // WAN generation history table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS wan_generation_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL,
-      model TEXT NOT NULL,
-      prompt TEXT DEFAULT '',
-      input_image TEXT DEFAULT '',
-      output_images TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  
-  // Voice clones table (MiniMax)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS voice_clones (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      username TEXT NOT NULL,
-      voice_id TEXT NOT NULL UNIQUE,
-      demo_url TEXT DEFAULT '',
-      status TEXT DEFAULT 'cloning',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
   // Add missing columns if needed
   try { db.exec('ALTER TABLE materials ADD COLUMN sort_order INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE materials ADD COLUMN downloads INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE materials ADD COLUMN gradient INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE materials ADD COLUMN badges TEXT DEFAULT \'["版权","new"]\''); } catch(e) {}
 
-  // Add lockout columns for login brute-force protection
-  try { db.exec('ALTER TABLE users ADD COLUMN login_attempts INTEGER DEFAULT 0'); } catch(e) {}
-  try { db.exec('ALTER TABLE users ADD COLUMN locked_until TEXT DEFAULT NULL'); } catch(e) {}
-
   // Create admin user if not exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
   if (!adminExists) {
     db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, ?)')
-      .run('admin', hashPwd(process.env.ADMIN_PWD || 'admin123'), 'admin', 0);
+      .run('admin', crypto.createHash('md5').update(process.env.ADMIN_PWD || 'admin123').digest('hex'), 'admin', 0);
   }
 }
 
-// === R2 Storage (Cloudflare) ===
-let s3Client = null;
-
-async function initR2() {
-  if (!USE_R2) { console.log('R2 not configured. Using local disk.'); return; }
-  const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-  s3Client = {
-    client: new S3Client({
-      region: 'auto',
-      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
-      forcePathStyle: false,
-    }),
-    PutObjectCommand,
-    DeleteObjectCommand,
-    GetObjectCommand,
-    ListObjectsV2Command
-  };
-  console.log(`R2 storage configured: bucket=${R2_BUCKET}, endpoint=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`);
-}
+// === R2 Storage ===
 
 // === Snapshot: manual save/restore ===
 const SNAPSHOT_PATH = path.join(__dirname, 'data', 'materials-snapshot.json');
@@ -246,17 +192,7 @@ async function saveSnapshot() {
     fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
     fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), 'utf-8');
 
-    // Sync snapshot to R2
-    if (USE_R2 && s3Client) {
-      const buffer = fs.readFileSync(SNAPSHOT_PATH);
-      await s3Client.client.send(new s3Client.PutObjectCommand({
-        Bucket: R2_BUCKET,
-        Key: 'materials-snapshot.json',
-        Body: buffer,
-        ContentType: 'application/json'
-      }));
-    }
-    console.log(`Snapshot saved: ${snapshot.length} materials`);
+        console.log(`Snapshot saved: ${snapshot.length} materials`);
     return snapshot.length;
   } catch (e) {
     console.error('Snapshot save failed:', e.message);
@@ -283,13 +219,7 @@ async function restoreSnapshot() {
   const currentFiles = db.prepare('SELECT path FROM material_files').all();
   const currentPaths = currentFiles.map(f => f.path);
   
-  // Delete R2 files that are not in the snapshot (orphans)
-  const orphans = currentPaths.filter(p => p && !snapshotPaths.has(p));
-  if (orphans.length > 0) {
-    console.log(`Cleaning up ${orphans.length} orphaned files from R2...`);
-    await Promise.all(orphans.map(p => deleteFromR2(p)));
-  }
-  
+    
   // Clear all materials
   db.exec('DELETE FROM material_files');
   db.exec('DELETE FROM materials');
@@ -320,90 +250,12 @@ async function restoreSnapshot() {
   return snapshot.length;
 }
 
-async function downloadFromR2(key) {
-  try {
-    if (!s3Client) return null;
-    const response = await s3Client.client.send(new s3Client.GetObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key
-    }));
-    const chunks = [];
-    for await (const chunk of response.Body) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
-  } catch (e) {
-    console.log('R2 download error:', e.message);
-    return null;
-  }
-}
-
-async function uploadToR2(key, buffer, contentType = 'application/octet-stream') {
-  if (!USE_R2 || !s3Client) {
-    // Fallback: save to local disk if R2 not configured
-    const filename = path.basename(key);
-    const uploadDir = path.join(__dirname, 'public', 'uploads');
-    fs.mkdirSync(uploadDir, { recursive: true });
-    const filePath = path.join(uploadDir, filename);
-    fs.writeFileSync(filePath, buffer);
-    const url = `/uploads/${filename}`;
-    console.log(`[LocalStorage] Saved: ${filename} (${buffer.length} bytes)`);
-    return url;
-  }
-  try {
-    await s3Client.client.send(new s3Client.PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType
-    }));
-    const url = `${R2_PUBLIC_URL}/${key}`;
-    console.log(`[R2] Uploaded: ${key} (${buffer.length} bytes) -> ${url}`);
-    return url;
-  } catch (e) {
-    console.error('[R2] Upload error:', e.message);
-    throw e;
-  }
-}
-
-async function deleteFromR2(url) {
-  if (!url) return;
-  // Handle R2/HTTP URLs
-  if (url.startsWith('http') && USE_R2 && s3Client) {
-    try {
-      const key = url.replace(/^https?:\/\/[^/]+\//, '');
-      await s3Client.client.send(new s3Client.DeleteObjectCommand({
-        Bucket: R2_BUCKET,
-        Key: key
-      }));
-      console.log(`[R2] Deleted: ${key}`);
-    } catch (e) {
-      console.error('[R2] Delete error:', e.message);
-    }
-    return;
-  }
-  // Handle local /uploads/ paths
-  if (url.startsWith('/uploads/')) {
-    try {
-      const filename = path.basename(url);
-      const filePath = path.join(__dirname, 'public', 'uploads', filename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`[LocalStorage] Deleted: ${filename}`);
-      }
-    } catch (e) {
-      console.error('[LocalStorage] Delete error:', e.message);
-    }
-  }
-}
-
 // === SEO Config ===
 function getSiteURL(req) {
   if (process.env.SITE_URL) return process.env.SITE_URL;
   if (req) return `${req.protocol}://${req.get('host')}`;
   return 'https://lizisucaiwang.online';
 }
-
 
 // === CORS ===
 const ALLOWED_ORIGINS = [
@@ -438,40 +290,19 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// === Auth Middleware ===
-function generateToken() { return crypto.randomBytes(32).toString('hex'); }
-
-function requireAuth(req, res, next) {
-  if (!dbReady) return res.status(503).json({ ok: false, error: '服务维护中' });
-  const token = req.headers['x-auth-token'];
-  if (!token) return res.status(401).json({ ok: false, error: '请先登录' });
-  const session = db.prepare('SELECT username FROM sessions WHERE token = ?').get(token);
-  if (!session) return res.status(401).json({ ok: false, error: '登录已过期，请重新登录' });
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(session.username);
-  if (!user) return res.status(401).json({ ok: false, error: '用户不存在' });
-  // Check lockout
-  if (user.locked_until && new Date(user.locked_until) > new Date()) {
-    return res.status(403).json({ ok: false, error: '账号已锁定，请15分钟后再试' });
-  }
-  // Enforce force_pwd_change (allow only changePwd and logout)
-  if (user.force_pwd_change === 1 && req.path !== '/api/changePwd') {
-    return res.json({ ok: false, error: '请先修改密码', forcePwdChange: true });
-  }
-  req.authUser = user;
-  req.authToken = token;
-  next();
-}
-
-function requireAdmin(req, res, next) {
-  if (!req.authUser || req.authUser.role !== 'admin') {
-    return res.status(403).json({ ok: false, error: '权限不足，仅管理员可操作' });
-  }
-  next();
-}
-
 // Cache headers for static assets
 // Cache headers for static assets
+// Protect /ai/ from direct URL access
+app.use('/ai', (req, res, next) => {
+  const referer = req.get('referer') || '';
+  if (referer.includes('lizisucaiwang.online') || referer.includes('43.161.253.21') || referer.includes('localhost') || referer.includes('127.0.0.1')) {
+    return next();
+  }
+  res.redirect('/');
+});
+
 app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), { maxAge: '7d', immutable: true }));
+app.use('/data/uploads', express.static(path.join(__dirname, 'data', 'uploads')));
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: 0,
   etag: true,
@@ -490,65 +321,67 @@ app.get("/cat/:name", function(req, res) {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+// === Reverse Proxy: /voice/* → voice-app (port 3003) ===
+const httpVoice = require('http');
+function proxyToVoice(req, res, stripPrefix) {
+  let targetPath = req.url;
+  if (stripPrefix) {
+    targetPath = targetPath.replace(/^\/voice/, '') || '/';
+  }
+  const bodyChunks = [];
+  req.on('data', chunk => bodyChunks.push(chunk));
+  req.on('end', () => {
+    const body = bodyChunks.length ? Buffer.concat(bodyChunks) : null;
+    const opts = {
+      hostname: '127.0.0.1',
+      port: 3003,
+      path: targetPath,
+      method: req.method,
+      headers: { ...req.headers, host: '127.0.0.1:3003' }
+    };
+    if (body) opts.headers['content-length'] = body.length;
+    const proxyReq = httpVoice.request(opts, proxyRes => {
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
+      proxyRes.pipe(res);
+    });
+    proxyReq.on('error', err => {
+      console.error('[Voice Proxy Error]', err.message);
+      if (!res.headersSent) res.status(502).json({ error: '配音服务不可用' });
+    });
+    if (body) proxyReq.write(body);
+    proxyReq.end();
+  });
+}
+
+// Proxy voice static pages: /voice/* → port 3003
+app.all('/voice/{*splat}', (req, res) => proxyToVoice(req, res, true));
+app.all('/voice', (req, res) => proxyToVoice(req, res, true));
+
+// Proxy voice API endpoints → port 3003
+app.all('/api/tts', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/merge', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/voice-clone', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/voice-status', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/system-voices', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/voice-list', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/voice-delete', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/chat', (req, res) => proxyToVoice(req, res, false));
+app.all('/api/chat/models', (req, res) => proxyToVoice(req, res, false));
+
 // AI image page - only accessible via iframe inside main site
 // Direct /ai URL access is disabled, redirects to homepage
 app.get("/ai", function(req, res) {
   res.redirect('/');
 });
 
-
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
-function hashPwd(p) { return bcrypt.hashSync(p, BCRYPT_ROUNDS); }
-function verifyPwd(plain, hashed) {
-  if (!hashed) return false;
-  // Legacy MD5 hash (32 hex chars) — transparent migration
-  if (/^[a-f0-9]{32}$/.test(hashed)) {
-    const md5 = crypto.createHash('md5').update(plain).digest('hex');
-    if (md5 === hashed) {
-      // Upgrade to bcrypt in background (caller should persist)
-      return 'upgrade';
-    }
-    return false;
-  }
-  return bcrypt.compareSync(plain, hashed);
-}
-function generateTempPassword() {
-  return crypto.randomBytes(5).toString('base64url'); // 8-char random password
-}
+function hashPwd(p) { return crypto.createHash('md5').update(p).digest('hex'); }
 
-// Rewrite old R2 bucket URLs to the current R2_PUBLIC_URL
-function rewriteR2Url(url) {
-  if (!url || typeof url !== 'string') return url;
-  // Match any pub-xxxxxxxx.r2.dev URL and replace with current R2_PUBLIC_URL
-  if (R2_PUBLIC_URL && url.includes('.r2.dev/')) {
-    return url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev/, R2_PUBLIC_URL);
-  }
-  return url;
-}
+// Rewrite old R2 bucket URLs to the current
 
 // === DB Sync Helper ===
-async function syncDB() {
-  if (!USE_R2) return;
-  try {
-    if (!s3Client || !db) {
-      console.error('DB sync: s3Client or db not initialized');
-      return;
-    }
-    db.pragma('wal_checkpoint(TRUNCATE)');
-    const buffer = fs.readFileSync(DB_PATH);
-    await s3Client.client.send(new s3Client.PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: DB_KEY,
-      Body: buffer,
-      ContentType: 'application/octet-stream'
-    }));
-    console.log('DB synced to R2 (' + buffer.length + ' bytes)');
-  } catch(e) {
-    console.error('DB sync failed:', e.message);
-  }
-}
 
 // === Helper: get material with files ===
 function getMaterialWithFiles(id) {
@@ -558,7 +391,7 @@ function getMaterialWithFiles(id) {
   return {
     ...mat,
     badges: JSON.parse(mat.badges || '["版权","new"]'),
-    uploadedFiles: files.map(f => ({ name: f.name, path: rewriteR2Url(f.path), ext: f.ext, size: f.size, mime: f.mime }))
+    uploadedFiles: files.map(f => ({ name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
   };
 }
 
@@ -569,7 +402,7 @@ function getAllMaterials() {
     return {
       ...m,
       badges: JSON.parse(m.badges || '["版权","new"]'),
-      uploadedFiles: files.map(f => ({ name: f.name, path: rewriteR2Url(f.path), ext: f.ext, size: f.size, mime: f.mime }))
+      uploadedFiles: files.map(f => ({ id: f.id, name: f.name, path: f.path, ext: f.ext, size: f.size, mime: f.mime }))
     };
   });
 }
@@ -577,136 +410,138 @@ function getAllMaterials() {
 // === API Routes ===
 
 // Login
-
-// Brute-force protection for login
-const loginLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { ok: false, error: '登录尝试过于频繁，请1分钟后再试' }
-});
-
-app.post('/api/login', loginLimiter, async (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password, deviceId } = req.body;
   const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
   if (!username || !password) return res.json({ ok: false, error: '请输入用户名和密码' });
-  // Device lock removed - deviceId validation disabled
+  if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+    return res.json({ ok: false, error: '设备标识无效' });
+  }
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user) return res.json({ ok: false, error: '用户名或密码错误' });
+  if (!user || user.password !== hashPwd(password)) return res.json({ ok: false, error: '用户名或密码错误' });
 
-  // Check lockout
-  if (user.locked_until && new Date(user.locked_until) > new Date()) {
-    return res.json({ ok: false, error: '密码错误次数过多，账号已锁定15分钟' });
-  }
-
-  // Verify password (with transparent MD5→bcrypt migration)
-  const pwdResult = verifyPwd(password, user.password);
-  if (pwdResult === 'upgrade') {
-    // Upgrade password hash to bcrypt
-    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPwd(password), user.id);
-  } else if (!pwdResult) {
-    // Increment failed attempts
-    const attempts = (user.login_attempts || 0) + 1;
-    if (attempts >= 5) {
-      const lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      db.prepare('UPDATE users SET login_attempts = ?, locked_until = ? WHERE id = ?')
-        .run(attempts, lockedUntil, user.id);
-      await syncDB();
-      return res.json({ ok: false, error: '密码错误5次，账号已锁定15分钟' });
-    }
-    db.prepare('UPDATE users SET login_attempts = ? WHERE id = ?').run(attempts, user.id);
-    const remaining = 5 - attempts;
-    return res.json({ ok: false, error: `用户名或密码错误（还可尝试${remaining}次）` });
-  }
-
-  // Reset failed attempts on success
-  db.prepare('UPDATE users SET login_attempts = 0, locked_until = NULL WHERE id = ?').run(user.id);
-
-  // Device lock check (admin: enforce on ALL devices including mobile)
+  // Device lock check - only enforce for admin
   const isAdminLogin = user.role === 'admin';
-  if (!isMobile || isAdminLogin) {
+  if (isAdminLogin) {
     const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
-    if (lock) {
-      if (lock.device_id !== deviceId) {
-        return res.json({ ok: false, error: isAdminLogin ? '管理员账号已锁定到指定设备，无法在此设备登录' : '该账号已在其他设备登录，无法在此设备使用' });
-      }
-      if (!isAdminLogin && lock.is_mobile !== (isMobile ? 1 : 0)) {
-        db.prepare('UPDATE device_lock SET is_mobile = ? WHERE username = ?').run(isMobile ? 1 : 0, username);
-        await syncDB();
-      }
-    } else {
-      db.prepare('INSERT INTO device_lock (username, device_id, is_mobile) VALUES (?, ?, ?)')
-        .run(username, deviceId, isMobile ? 1 : 0);
-      await syncDB();
+    if (lock && lock.device_id !== deviceId) {
+      return res.json({ ok: false, error: '管理员账号已锁定到指定设备，无法在此设备登录' });
     }
   }
 
-  // Generate session token
-  // Remove any existing sessions for this user+device
-  db.prepare('DELETE FROM sessions WHERE username = ? AND device_id = ?').run(username, deviceId);
-  const token = generateToken();
-  db.prepare('INSERT INTO sessions (username, device_id, token) VALUES (?, ?, ?)')
-    .run(username, deviceId, token);
-  await syncDB();
+  // Generate session token for admin auto-login
+  const sessionToken = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT INTO sessions (username, device_id, token) VALUES (?, ?, ?)').run(user.username, deviceId, sessionToken);
+  // Clean up old sessions for this user+device (keep only last 5)
+  db.prepare('DELETE FROM sessions WHERE username = ? AND device_id = ? AND id NOT IN (SELECT id FROM sessions WHERE username = ? AND device_id = ? ORDER BY id DESC LIMIT 20)').run(user.username, deviceId, user.username, deviceId);
 
-  res.json({
-    ok: true,
-    token: token,
-    user: { username: user.username, role: user.role },
-    forcePwdChange: user.force_pwd_change === 1
-  });
+  res.json({ ok: true, user: { username: user.username, role: user.role }, token: sessionToken, forcePwdChange: !!user.force_pwd_change });
 });
 
 // Change password
-app.post('/api/changePwd', requireAuth, async (req, res) => {
-  const { oldPwd, newPwd } = req.body;
-  if (!oldPwd || !newPwd || newPwd.length < 8) return res.json({ ok: false, error: '新密码至少8位，需包含字母和数字' });
-  if (!/[a-zA-Z]/.test(newPwd) || !/[0-9]/.test(newPwd)) return res.json({ ok: false, error: '密码需包含字母和数字' });
-  const user = req.authUser;
-  const pwdResult = verifyPwd(oldPwd, user.password);
-  if (pwdResult === 'upgrade') {
-    // Old MD5 hash matches, proceed
-  } else if (!pwdResult) {
-    return res.json({ ok: false, error: '当前密码错误' });
-  }
-  db.prepare('UPDATE users SET password = ?, force_pwd_change = 0 WHERE username = ?').run(hashPwd(newPwd), user.username);
-  await syncDB();
+app.post('/api/changePwd', async (req, res) => {
+  const { username, oldPwd, newPwd } = req.body;
+  if (!oldPwd || !newPwd || newPwd.length < 4) return res.json({ ok: false, error: '新密码至少4位' });
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.password !== hashPwd(oldPwd)) return res.json({ ok: false, error: '当前密码错误' });
+  db.prepare('UPDATE users SET password = ?, force_pwd_change = 0 WHERE username = ?').run(hashPwd(newPwd), username);
   res.json({ ok: true });
 });
 
-// Logout — invalidate token
-app.post('/api/logout', requireAuth, async (req, res) => {
-  db.prepare('DELETE FROM sessions WHERE token = ?').run(req.authToken);
-  await syncDB();
-  res.json({ ok: true });
+// === Session verify ===
+app.post('/api/me', (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.json({ ok: false, error: '未登入' });
+  const session = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
+  if (!session) return res.status(401).json({ ok: false, error: '登录已過期，請重新登录' });
+  const user = db.prepare('SELECT username, role FROM users WHERE username = ?').get(session.username);
+  if (!user) return res.status(401).json({ ok: false, error: '登录已過期，請重新登录' });
+  res.json({ ok: true, user: { username: user.username, role: user.role } });
 });
 
 // === Users ===
-// Lightweight endpoint to get current user info
-app.post('/api/me', requireAuth, (req, res) => {
-  res.json({ ok: true, user: { username: req.authUser.username, role: req.authUser.role }, forcePwdChange: req.authUser.force_pwd_change === 1 });
+app.get('/api/users', (req, res) => {
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.query.username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
+  const users = db.prepare('SELECT username, role, created_at FROM users ORDER BY created_at DESC').all();
+  // Attach bindings and voice clone info to each user
+  for (const u of users) {
+    u.bindings = db.prepare('SELECT platform, platform_account FROM bindings WHERE username = ?').all(u.username);
+    // Get voice clone info
+    const voiceClone = db.prepare('SELECT demo_url, status FROM voice_clones WHERE username = ? ORDER BY created_at DESC LIMIT 1').get(u.username);
+    if (voiceClone && voiceClone.status === 'ready') {
+      u.voice_demo_url = voiceClone.demo_url;
+    }
+  }
+  res.json({ ok: true, users });
 });
 
-app.get('/api/users', requireAuth, requireAdmin, (req, res) => {
-  res.json({ ok: true, users: db.prepare('SELECT username, role FROM users ORDER BY created_at DESC').all() });
-});
-
-app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
-  const { username, role } = req.body;
+app.post('/api/users', async (req, res) => {
+  const { adminUsername, username, role } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
   if (!username || username.length < 2) return res.json({ ok: false, error: '用户名至少2个字符' });
   if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) return res.json({ ok: false, error: '用户名已存在' });
-  const tempPwd = generateTempPassword();
-  db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, 1)').run(username, hashPwd(tempPwd), role || 'user');
-  await syncDB();
-  res.json({ ok: true, tempPassword: tempPwd });
+  const tempPassword = '123456';
+  db.prepare('INSERT INTO users (username, password, role, force_pwd_change) VALUES (?, ?, ?, 1)').run(username, hashPwd(tempPassword), role || 'user');
+  res.json({ ok: true, tempPassword });
 });
 
-app.delete('/api/users/:username', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/users/:username', async (req, res) => {
+  const { adminUsername } = req.body;
   const targetUsername = req.params.username;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
   if (targetUsername === 'admin') return res.json({ ok: false, error: '不能删除管理员' });
   db.prepare('DELETE FROM users WHERE username = ?').run(targetUsername);
-  await syncDB();
+  res.json({ ok: true });
+});
+
+// Change user role
+app.put('/api/users/:username/role', (req, res) => {
+  const { adminUsername, role } = req.body;
+  const targetUsername = req.params.username;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
+  if (targetUsername === 'admin') return res.json({ ok: false, error: '不能修改主管理員角色' });
+  const validRoles = ['user', 'vip', 'promo', 'admin'];
+  if (!validRoles.includes(role)) return res.json({ ok: false, error: '無效角色' });
+  const target = db.prepare('SELECT id FROM users WHERE username = ?').get(targetUsername);
+  if (!target) return res.json({ ok: false, error: '用戶不存在' });
+  db.prepare('UPDATE users SET role = ? WHERE username = ?').run(role, targetUsername);
+  res.json({ ok: true });
+});
+
+// === Device Lock Management ===
+app.get('/api/device-locks', (req, res) => {
+  const adminUsername = req.query.username;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
+  const locks = db.prepare('SELECT * FROM device_lock ORDER BY locked_at DESC').all();
+  res.json({ ok: true, locks });
+});
+
+app.post('/api/admin/lock-device', (req, res) => {
+  const { adminUsername, deviceId } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '權限不足' });
+  if (!deviceId) return res.json({ ok: false, error: 'deviceId 缺失' });
+  // Upsert device lock for admin
+  const existing = db.prepare('SELECT id FROM device_lock WHERE username = ?').get(adminUsername);
+  if (existing) {
+    db.prepare('UPDATE device_lock SET device_id = ?, is_mobile = 0, locked_at = CURRENT_TIMESTAMP WHERE username = ?').run(deviceId, adminUsername);
+  } else {
+    db.prepare('INSERT INTO device_lock (username, device_id, is_mobile) VALUES (?, ?, 0)').run(adminUsername, deviceId);
+  }
+  res.json({ ok: true, deviceId });
+});
+
+app.delete('/api/device-locks/:username', (req, res) => {
+  const adminUsername = req.body.adminUsername;
+  const targetUsername = req.params.username;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(adminUsername, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
+  db.prepare('DELETE FROM device_lock WHERE username = ?').run(targetUsername);
   res.json({ ok: true });
 });
 
@@ -716,16 +551,18 @@ app.get('/api/materials', (req, res) => {
 });
 
 // Add material with file uploads
-app.post('/api/materials', requireAuth, requireAdmin, upload.array('files', 20), async (req, res) => {
-  const { cat, badges, gradient } = req.body;
+app.post('/api/materials', upload.array('files', 20), async (req, res) => {
+  const { username, cat, badges, gradient } = req.body;
   const name = toSimplified(req.body.name);
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   if (!name) return res.json({ ok: false, error: '请输入名称' });
 
   // Auto-overwrite if same name exists
   const existing = db.prepare('SELECT * FROM materials WHERE name = ?').get(name);
   if (existing) {
     const oldFiles = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(existing.id);
-    await Promise.all(oldFiles.map(f => f.path && f.path.startsWith('http') ? deleteFromR2(f.path) : Promise.resolve()));
+    await Promise.all(oldFiles.map(f => f.path && f.path && !f.path.startsWith('/data/') ? deleteFromLocal(f.path) : Promise.resolve()));
     db.prepare('DELETE FROM material_files WHERE material_id = ?').run(existing.id);
     db.prepare('DELETE FROM materials WHERE id = ?').run(existing.id);
     console.log(`Auto-overwrote existing material: ${name}`);
@@ -749,7 +586,6 @@ app.post('/api/materials', requireAuth, requireAdmin, upload.array('files', 20),
   if (files.length === 0) {
     console.warn(`[Upload] WARNING: No files received for material "${name}". Deleting record.`);
     try { db.prepare('DELETE FROM materials WHERE id = ?').run(materialId); } catch(e) {}
-    await syncDB();
     return res.json({ ok: false, error: '未收到任何文件，请重新选择文件后上传' });
   }
 
@@ -769,7 +605,7 @@ app.post('/api/materials', requireAuth, requireAdmin, upload.array('files', 20),
           console.error(`  Watermark failed for ${f.originalname}: ${wmErr.message}`);
         }
       }
-      const url = await uploadToR2(key, fileBuffer, f.mimetype);
+      const url = await saveToLocal(key, fileBuffer, f.mimetype);
       db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
         .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
       uploadedCount++;
@@ -784,7 +620,6 @@ app.post('/api/materials', requireAuth, requireAdmin, upload.array('files', 20),
   if (uploadedCount === 0) {
     console.error(`[Upload] All files failed for "${name}". Deleting material record.`);
     db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
-    await syncDB();
     return res.json({ ok: false, error: '文件上传失败：' + uploadErrors.join('; ') });
   }
 
@@ -801,13 +636,14 @@ app.post('/api/materials', requireAuth, requireAdmin, upload.array('files', 20),
   if (uploadErrors.length > 0) {
     warning += (warning ? '\n' : '') + '部分文件上传失败：' + uploadErrors.join('; ');
   }
-
-  await syncDB();
   res.json({ ok: true, materials: getAllMaterials(), warning });
 });
 
 // Upload files to existing material
-app.post('/api/materials/:id/upload', requireAuth, requireAdmin, upload.array('files', 20), async (req, res) => {
+app.post('/api/materials/:id/upload', upload.array('files', 20), async (req, res) => {
+  const { username } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   const materialId = parseInt(req.params.id, 10);
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (!material) return res.json({ ok: false, error: '素材不存在' });
@@ -826,18 +662,18 @@ app.post('/api/materials/:id/upload', requireAuth, requireAdmin, upload.array('f
         console.error(`  Watermark failed for ${f.originalname}: ${wmErr.message}`);
       }
     }
-    const url = await uploadToR2(key, fileBuffer, f.mimetype);
+    const url = await saveToLocal(key, fileBuffer, f.mimetype);
     db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
       .run(materialId, f.originalname, url, ext, f.size, f.mimetype);
   }
-
-  await syncDB();
   res.json({ ok: true, material: getMaterialWithFiles(materialId) });
 });
 
 // Update material
-app.put('/api/materials/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { cat, badges, gradient } = req.body;
+app.put('/api/materials/:id', async (req, res) => {
+  const { username, cat, badges, gradient } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   const materialId = parseInt(req.params.id, 10);
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
   if (!material) return res.json({ ok: false, error: '素材不存在' });
@@ -853,13 +689,14 @@ app.put('/api/materials/:id', requireAuth, requireAdmin, async (req, res) => {
     const vals = [...Object.values(updates), materialId];
     db.prepare(`UPDATE materials SET ${sets} WHERE id = ?`).run(...vals);
   }
-
-  await syncDB();
   res.json({ ok: true, materials: getAllMaterials() });
 });
 
 // Delete material
-app.delete('/api/materials/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/materials/:id', async (req, res) => {
+  const { username } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   const materialId = parseInt(req.params.id, 10);
 
   const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(materialId);
@@ -867,36 +704,48 @@ app.delete('/api/materials/:id', requireAuth, requireAdmin, async (req, res) => 
     const files = db.prepare('SELECT * FROM material_files WHERE material_id = ?').all(materialId);
     // Wait for all R2 deletions to complete
     await Promise.all(files.map(f => {
-      if (f.path && f.path.startsWith('http')) return deleteFromR2(f.path);
+      if (f.path && f.path && !f.path.startsWith('/data/')) return deleteFromLocal(f.path);
     }));
     db.prepare('DELETE FROM material_files WHERE material_id = ?').run(materialId);
     db.prepare('DELETE FROM materials WHERE id = ?').run(materialId);
     // Real-time backup
-    await syncDB();
   }
 
   res.json({ ok: true, materials: getAllMaterials() });
 });
 
 // Reorder materials
-app.post('/api/materials/reorder', requireAuth, requireAdmin, async (req, res) => {
-  const { order } = req.body;
+app.post('/api/materials/reorder', async (req, res) => {
+  const { username, order } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user || user.role !== 'admin') return res.json({ ok: false, error: '权限不足' });
   const stmt = db.prepare('UPDATE materials SET sort_order = ? WHERE id = ?');
   const materials = getAllMaterials();
   order.forEach((idx, i) => {
     if (materials[idx]) stmt.run(i, materials[idx].id);
   });
-  await syncDB();
   res.json({ ok: true, materials: getAllMaterials() });
 });
 
 // === Download ===
-app.post('/api/download', requireAuth, async (req, res) => {
-  const { materialIndex, deviceId } = req.body;
+app.post('/api/download', async (req, res) => {
+  const { username, materialIndex, deviceId } = req.body;
   const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
-  const user = req.authUser;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(401).json({ ok: false, error: '请先登录' });
 
-  // Device lock removed - download from any device
+  // Check device lock (skip for mobile)
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.status(403).json({ ok: false, error: '设备不匹配，无法下载' });
+      }
+      if (lock.is_mobile) {
+        return res.status(403).json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+      }
+    }
+  }
 
   const materials = getAllMaterials();
   const material = materials[materialIndex];
@@ -911,40 +760,84 @@ app.post('/api/download', requireAuth, async (req, res) => {
 
   // Increment download count
   db.prepare('UPDATE materials SET downloads = downloads + 1 WHERE id = ?').run(material.id);
-  await syncDB();
   res.json({ ok: true, material: getMaterialWithFiles(material.id) });
 });
 
 // Track download (lightweight, no file data returned)
-app.post('/api/download/track', requireAuth, async (req, res) => {
-  const { materialId } = req.body;
-  const username = req.authUser.username;
-  if (!materialId) return res.json({ ok: false });
+app.post('/api/download/track', async (req, res) => {
+  const { username, materialId } = req.body;
+  if (!username || !materialId) return res.json({ ok: false });
   db.prepare('UPDATE materials SET downloads = downloads + 1 WHERE id = ?').run(materialId);
-  await syncDB();
   res.json({ ok: true });
 });
 
+// Download individual file by ID
+app.get('/api/file/download/:fileId', async (req, res) => {
+  const fileId = req.params.fileId;
+  const file = db.prepare('SELECT * FROM material_files WHERE id = ?').get(fileId);
+  if (!file) return res.status(404).json({ ok: false, error: '文件不存在' });
+  
+  const fs = require('fs');
+  const path = require('path');
+  
+  // Convert relative path to absolute path
+  const fullPath = path.join(__dirname, file.path);
+  
+  // Check if file exists on disk
+  if (!fs.existsSync(fullPath)) {
+    return res.status(404).json({ ok: false, error: '文件不存在于服务器' });
+  }
+  
+  // Set headers for file download
+  const fileName = encodeURIComponent(file.name);
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${fileName}`);
+  res.setHeader('Content-Type', file.mime || 'application/octet-stream');
+  res.setHeader('Content-Length', file.size);
+  
+  // Send file
+  const fileStream = fs.createReadStream(fullPath);
+  fileStream.pipe(res);
+});
 
 // Download all materials as zip
-app.post('/api/download-all', requireAuth, async (req, res) => {
-  const { deviceId } = req.body;
+app.post('/api/download-all', async (req, res) => {
+  const { username, deviceId } = req.body;
   const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
-  const user = req.authUser;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(401).json({ ok: false, error: '请先登录' });
 
-  // Device lock removed - download from any device
+  // Check device lock (skip for mobile)
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.status(403).json({ ok: false, error: '设备不匹配，无法下载' });
+      }
+      if (lock.is_mobile) {
+        return res.status(403).json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+      }
+    }
+  }
 
   const role = user.role;
   const canDl = role === 'admin' || role === 'vip';
-  if (!canDl) return res.json({ ok: false, error: '权限不足，仅管理员或VIP可下载全部素材' });
+  if (!canDl) return res.status(403).json({ ok: false, error: '权限不足，仅管理员或VIP可下载全部素材' });
+
+  const archiver = require('archiver');
+  const archive = archiver("zip", { zlib: { level: 1 } });
+
+  archive.on('error', (err) => {
+    console.error('Archive error (all):', err);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: '打包失败: ' + err.message });
+    } else {
+      res.end();
+    }
+  });
 
   try {
-    const { ZipArchive } = await import('archiver');
-    const archive = new ZipArchive();
-    
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename=lizi-materials-all.zip');
-    
+    res.setHeader('Content-Disposition', "attachment; filename*=UTF-8''lizi-materials-all.zip");
     archive.pipe(res);
     
     const materials = db.prepare('SELECT * FROM materials ORDER BY id DESC').all();
@@ -954,13 +847,13 @@ app.post('/api/download-all', requireAuth, async (req, res) => {
       
       for (const file of files) {
         try {
-          const r2Key = file.path.replace(/^https?:\/\/[^/]+\//, '');
-          const fileBuffer = await downloadFromR2(r2Key);
-          
-          if (fileBuffer) {
-            const folder = mat.cat || '未分类';
-            const fileName = file.name || `file_${file.id}${file.ext}`;
-            archive.append(fileBuffer, { name: `${folder}/${mat.name}/${fileName}` });
+          const fileStream = await readFromLocal(file.path);
+          console.log('DEBUG fileStream:', typeof fileStream, fileStream?.constructor?.name, 'path:', file.path);
+          if (fileStream) {
+            const folder = toSimplified(mat.cat) || '未分类';
+            const baseName = toSimplified(mat.name) || `material_${mat.id}`;
+            const fileName = (file.name && /[\u4e00-\u9fa5]/.test(file.name)) ? toSimplified(file.name) : `file_${file.id}${file.ext}`;
+            archive.append(fileStream, { name: `${folder}/${baseName}/${fileName}` });
           }
         } catch (e) {
           console.error(`Failed to add file ${file.name}:`, e.message);
@@ -977,26 +870,46 @@ app.post('/api/download-all', requireAuth, async (req, res) => {
   }
 });
 // === Download Category ===
-app.post('/api/download-category', requireAuth, async (req, res) => {
-  const { deviceId, category } = req.body;
+app.post('/api/download-category', async (req, res) => {
+  const { username, deviceId, category } = req.body;
   const isMobile = req.body.isMobile === true || req.body.isMobile === 'true' || req.body.isMobile === 1;
-  const user = req.authUser;
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(401).json({ ok: false, error: '请先登录' });
 
-  // Device lock removed - download from any device
+  // Check device lock (skip for mobile)
+  if (!isMobile) {
+    const lock = db.prepare('SELECT * FROM device_lock WHERE username = ?').get(username);
+    if (lock) {
+      if (lock.device_id !== deviceId) {
+        return res.status(403).json({ ok: false, error: '设备不匹配，无法下载' });
+      }
+      if (lock.is_mobile) {
+        return res.status(403).json({ ok: false, error: '手机设备仅支持预览，无法下载' });
+      }
+    }
+  }
 
   const role = user.role;
   const canDl = role === 'admin' || role === 'vip';
-  if (!canDl) return res.json({ ok: false, error: '权限不足，仅管理员或VIP可下载素材' });
+  if (!canDl) return res.status(403).json({ ok: false, error: '权限不足，仅管理员或VIP可下载素材' });
 
-  if (!category) return res.json({ ok: false, error: '请指定分类' });
+  if (!category) return res.status(400).json({ ok: false, error: '请指定分类' });
+
+  const archiver = require('archiver');
+  const archive = archiver("zip", { zlib: { level: 1 } });
+
+  archive.on('error', (err) => {
+    console.error('Archive error (category):', err);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: '打包失败: ' + err.message });
+    } else {
+      res.end();
+    }
+  });
 
   try {
-    const { ZipArchive } = await import('archiver');
-    const archive = new ZipArchive();
-    
     res.setHeader('Content-Type', 'application/zip');
-    
-    res.setHeader('Content-Disposition', 'attachment; filename=lizi-materials.zip');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''lizi-materials-${encodeURIComponent(category)}.zip`);
     archive.pipe(res);
     
     const materials = db.prepare('SELECT * FROM materials WHERE cat = ? ORDER BY id DESC').all(category);
@@ -1006,12 +919,12 @@ app.post('/api/download-category', requireAuth, async (req, res) => {
       
       for (const file of files) {
         try {
-          const r2Key = file.path.replace(/^https?:\/\/[^/]+\//, '');
-          const fileBuffer = await downloadFromR2(r2Key);
-          
-          if (fileBuffer) {
-            const fileName = file.name || `file_${file.id}${file.ext}`;
-            archive.append(fileBuffer, { name: `${mat.name}/${fileName}` });
+          const fileStream = await readFromLocal(file.path);
+          console.log('DEBUG fileStream:', typeof fileStream, fileStream?.constructor?.name, 'path:', file.path);
+          if (fileStream) {
+            const baseName = toSimplified(mat.name) || `material_${mat.id}`;
+            const fileName = (file.name && /[\u4e00-\u9fa5]/.test(file.name)) ? toSimplified(file.name) : `file_${file.id}${file.ext}`;
+            archive.append(fileStream, { name: `${baseName}/${fileName}` });
           }
         } catch (e) {
           console.error(`Failed to add file ${file.name}:`, e.message);
@@ -1029,9 +942,8 @@ app.post('/api/download-category', requireAuth, async (req, res) => {
 });
 
 // === Requests ===
-app.post('/api/requests', requireAuth, upload.array('images', 5), async (req, res) => {
-  const username = req.authUser.username;
-  const { content, contact } = req.body;
+app.post('/api/requests', upload.array('images', 5), async (req, res) => {
+  const { username, content, contact } = req.body;
   if (!content) return res.json({ ok: false, error: '请填写需求描述' });
 
   const imgPaths = [];
@@ -1039,7 +951,7 @@ app.post('/api/requests', requireAuth, upload.array('images', 5), async (req, re
   for (const f of files) {
     const ext = path.extname(f.originalname);
     const key = `uploads/${crypto.randomUUID()}${ext}`;
-    imgPaths.push(await uploadToR2(key, f.buffer, f.mimetype));
+    imgPaths.push(await saveToLocal(key, f.buffer, f.mimetype));
   }
 
   db.prepare('INSERT INTO requests (user, content, contact, images) VALUES (?, ?, ?, ?)')
@@ -1051,8 +963,6 @@ app.post('/api/requests', requireAuth, upload.array('images', 5), async (req, re
     db.prepare('INSERT INTO notifications (user, from_user, message) VALUES (?, ?, ?)')
       .run(admin.username, username || '匿名', `收到新的素材需求: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`);
   }
-
-  await syncDB();
   res.json({ ok: true });
 });
 
@@ -1064,30 +974,33 @@ app.get('/api/requests', (req, res) => {
   }))});
 });
 
-app.delete('/api/requests/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/requests/:id', async (req, res) => {
+  const { username } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!user) return res.json({ ok: false, error: '权限不足' });
   db.prepare('DELETE FROM requests WHERE id = ?').run(req.params.id);
-  await syncDB();
   res.json({ ok: true });
 });
 
 // === Notifications ===
-app.get('/api/notifications', requireAuth, (req, res) => {
-  const notifs = db.prepare('SELECT * FROM notifications WHERE user = ? ORDER BY time DESC').all(req.authUser.username);
-  const unread = db.prepare('SELECT COUNT(*) as cnt FROM notifications WHERE user = ? AND is_read = 0').get(req.authUser.username).cnt;
+app.get('/api/notifications', (req, res) => {
+  const notifs = db.prepare('SELECT * FROM notifications WHERE user = ? ORDER BY time DESC').all(req.query.username);
+  const unread = db.prepare('SELECT COUNT(*) as cnt FROM notifications WHERE user = ? AND is_read = 0').get(req.query.username).cnt;
   res.json({ ok: true, notifications: notifs, unread });
 });
 
-app.post('/api/notifications/read', requireAuth, async (req, res) => {
-  const username = req.authUser.username;
+app.post('/api/notifications/read', async (req, res) => {
+  const { username } = req.body;
+  // Verify user exists
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.json({ ok: false, error: '用户不存在' });
   db.prepare('UPDATE notifications SET is_read = 1 WHERE user = ?').run(username);
-  await syncDB();
   res.json({ ok: true });
 });
 
 // === Bindings ===
-app.post('/api/bindings', requireAuth, async (req, res) => {
-  const username = req.authUser.username;
-  const { platform, platformAccount } = req.body;
+app.post('/api/bindings', async (req, res) => {
+  const { username, platform, platformAccount } = req.body;
   if (!platform || !platformAccount) return res.json({ ok: false, error: '请填写完整信息' });
   const existing = db.prepare('SELECT id FROM bindings WHERE username = ? AND platform = ?').get(username, platform);
   if (existing) {
@@ -1095,23 +1008,23 @@ app.post('/api/bindings', requireAuth, async (req, res) => {
   } else {
     db.prepare('INSERT INTO bindings (username, platform, platform_account) VALUES (?, ?, ?)').run(username, platform, platformAccount);
   }
-  await syncDB();
   res.json({ ok: true });
 });
 
-app.get('/api/bindings', requireAuth, (req, res) => {
-  const bindings = db.prepare('SELECT * FROM bindings WHERE username = ? ORDER BY bind_time DESC').all(req.authUser.username);
+app.get('/api/bindings', (req, res) => {
+  const bindings = db.prepare('SELECT * FROM bindings WHERE username = ? ORDER BY bind_time DESC').all(req.query.username);
   res.json({ ok: true, bindings });
 });
 
-app.delete('/api/bindings/:platform', requireAuth, async (req, res) => {
-  const username = req.authUser.username;
+app.delete('/api/bindings/:platform', async (req, res) => {
+  const { username } = req.body;
   db.prepare('DELETE FROM bindings WHERE username = ? AND platform = ?').run(username, req.params.platform);
-  await syncDB();
   res.json({ ok: true });
 });
 
-app.get('/api/bindings/all', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/bindings/all', (req, res) => {
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(req.query.username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足' });
   const users = db.prepare('SELECT username, role FROM users ORDER BY created_at DESC').all();
   const usersWithBindings = users.map(u => {
     const bindings = db.prepare('SELECT * FROM bindings WHERE username = ?').all(u.username);
@@ -1121,7 +1034,10 @@ app.get('/api/bindings/all', requireAuth, requireAdmin, (req, res) => {
 });
 
 // === Save Current Version to lizi-new ===
-app.post('/api/save-version', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/save-version', async (req, res) => {
+  const { username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
   
   const fs = require('fs');
   const path = require('path');
@@ -1177,90 +1093,11 @@ app.post('/api/save-version', requireAuth, requireAdmin, async (req, res) => {
     errors: errors.length > 0 ? errors : undefined
   });
 });
-
-// === Revert to Stable ===
-app.post('/api/revert-stable', requireAuth, requireAdmin, async (req, res) => {
-  
-  if (!USE_R2 || !s3Client) {
-    return res.json({ ok: false, error: 'R2 未配置，无法恢复' });
-  }
-  
-  try {
-    console.log('Reverting to stable DB from R2...');
-    const backupBuffer = await downloadFromR2('lizi_backup.db');
-    if (!backupBuffer) {
-      return res.json({ ok: false, error: 'R2 中找不到备份数据库 lizi_backup.db' });
-    }
-    
-    // Block other requests during DB swap
-    dbReady = false;
-    
-    // === 备份当前帐号资料（密码、设备锁定、绑定、会话） ===
-    const currentUsers = db.prepare('SELECT * FROM users').all();
-    const currentDeviceLocks = db.prepare('SELECT * FROM device_lock').all();
-    const currentBindings = db.prepare('SELECT * FROM bindings').all();
-    const currentSessions = db.prepare('SELECT * FROM sessions').all();
-    console.log(`Preserving ${currentUsers.length} users, ${currentDeviceLocks.length} device locks, ${currentBindings.length} bindings`);
-    
-    // Close current DB
-    db.close();
-    
-    // Write backup to DB path
-    fs.writeFileSync(DB_PATH, backupBuffer);
-    console.log('DB file restored from backup (' + backupBuffer.length + ' bytes)');
-    
-    // Re-init DB
-    const CompatDB = require('./lib/sqlite-compat');
-    db = new CompatDB(null, DB_PATH);
-    db.pragma('journal_mode = WAL');
-    
-    // === 恢复当前帐号资料（不影响密码） ===
-    // 清空备份中的帐号表，用当前数据覆盖
-    db.exec('DELETE FROM sessions');
-    db.exec('DELETE FROM device_lock');
-    db.exec('DELETE FROM bindings');
-    db.exec('DELETE FROM users');
-    
-    const insertUser = db.prepare('INSERT INTO users (id, username, password, role, force_pwd_change, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-    for (const u of currentUsers) {
-      insertUser.run(u.id, u.username, u.password, u.role, u.force_pwd_change, u.created_at);
-    }
-    console.log(`Restored ${currentUsers.length} users (passwords preserved)`);
-    
-    const insertLock = db.prepare('INSERT INTO device_lock (id, username, device_id, is_mobile, locked_at) VALUES (?, ?, ?, ?, ?)');
-    for (const l of currentDeviceLocks) {
-      try { insertLock.run(l.id, l.username, l.device_id, l.is_mobile, l.locked_at); } catch(e) {}
-    }
-    
-    const insertBinding = db.prepare('INSERT INTO bindings (id, username, platform, platform_account, bind_time) VALUES (?, ?, ?, ?, ?)');
-    for (const b of currentBindings) {
-      try { insertBinding.run(b.id, b.username, b.platform, b.platform_account, b.bind_time); } catch(e) {}
-    }
-    
-    const insertSession = db.prepare('INSERT INTO sessions (id, username, device_id, token, created_at) VALUES (?, ?, ?, ?, ?)');
-    for (const s of currentSessions) {
-      try { insertSession.run(s.id, s.username, s.device_id, s.token, s.created_at); } catch(e) {}
-    }
-    
-    const count = db.prepare('SELECT COUNT(*) as c FROM materials').get().c;
-    console.log('DB restored with ' + count + ' materials (accounts preserved)');
-    
-    // Sync back to R2
-    await syncDB();
-    
-    // Unblock requests
-    dbReady = true;
-    
-    res.json({ ok: true, message: '恢复成功（帐号密码已保留）', materialCount: count, userCount: currentUsers.length });
-  } catch (e) {
-    console.error('Revert failed:', e);
-    dbReady = true; // Always unblock even on error
-    res.json({ ok: false, error: '恢复失败: ' + e.message });
-  }
-});
-
 // === Snapshot Save/Restore (manual only) ===
-app.post('/api/snapshot/save', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/snapshot/save', async (req, res) => {
+  const { username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
   
   try {
     const count = await saveSnapshot();
@@ -1270,11 +1107,13 @@ app.post('/api/snapshot/save', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/snapshot/restore', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/snapshot/restore', async (req, res) => {
+  const { username } = req.body;
+  const admin = db.prepare('SELECT * FROM users WHERE username = ? AND role = ?').get(username, 'admin');
+  if (!admin) return res.json({ ok: false, error: '权限不足，仅管理员可操作' });
   
   try {
     const count = await restoreSnapshot();
-    await syncDB();
     res.json({ ok: true, message: `已从快照恢复 ${count} 个素材`, materialCount: count, materials: getAllMaterials() });
   } catch (e) {
     res.json({ ok: false, error: '恢复快照失败: ' + e.message });
@@ -1288,7 +1127,7 @@ const os = require('os');
 const WHISPER_BIN = '/opt/whisper.cpp/build/bin/whisper-cli';
 const WHISPER_MODEL = '/opt/whisper.cpp/models/ggml-tiny.bin';
 
-app.post('/api/transcribe', requireAuth, upload.single('audio'), async (req, res) => {
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.json({ ok: false, error: 'No audio file provided' });
 
   const tmpDir = os.tmpdir();
@@ -1412,8 +1251,8 @@ app.get('/sitemap.xml', (req, res) => {
 });
 
 // === Diagnostic Endpoint (test R2 upload/download) ===
-// /api/debug/r2-test removed (security)
 
+// === Multer Error Handler (must be after all routes) ===
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     console.error(`[Multer Error] code=${err.code} message="${err.message}" field=${err.field || 'N/A'}`);
@@ -1431,22 +1270,6 @@ app.use((err, req, res, next) => {
 
 // === Start ===
 async function setupDBSync() {
-  if (USE_R2) {
-    console.log('Checking for DB in R2...');
-    // Only restore from R2 if local DB doesn't exist
-    if (!fs.existsSync(DB_PATH)) {
-      const dbBuffer = await downloadFromR2(DB_KEY);
-      if (dbBuffer) {
-        fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-        fs.writeFileSync(DB_PATH, dbBuffer);
-        console.log('DB restored from R2 (' + dbBuffer.length + ' bytes)');
-      } else {
-        console.log('No DB found in R2, will create new');
-      }
-    } else {
-      console.log('Local DB exists, skipping R2 restore');
-    }
-  }
   await initDB();
   
   // Migration: fix category names
@@ -1466,152 +1289,8 @@ async function setupDBSync() {
       console.log(`Migration: ${result.changes} materials updated from "${m.from}" to "${m.to}"`);
     }
   }
-
-  // Migration: fix non-ASCII file paths in R2 (Chinese filenames cause 403 errors)
-  if (USE_R2) {
-    const filesWithBadPaths = db.prepare(
-      "SELECT id, name, path, ext, mime FROM material_files WHERE path NOT LIKE '%/uploads/%' AND path NOT LIKE '%/files/%'"
-    ).all();
-
-    if (filesWithBadPaths.length > 0) {
-      console.log(`Migration: Found ${filesWithBadPaths.length} files with non-ASCII paths, renaming...`);
-      for (const f of filesWithBadPaths) {
-        try {
-          let key = f.path;
-          const prefix = R2_PUBLIC_URL + '/';
-          if (key.startsWith(prefix)) key = key.slice(prefix.length);
-
-          // Check if key has non-ASCII chars
-          let hasNonAscii = false;
-          for (let i = 0; i < key.length; i++) {
-            if (key.charCodeAt(i) > 127) { hasNonAscii = true; break; }
-          }
-          if (!hasNonAscii) continue;
-
-          // Download from R2
-          const fileBuffer = await downloadFromR2(key);
-          if (!fileBuffer) {
-            console.log(`  SKIP: Cannot download ${key}`);
-            continue;
-          }
-
-          // Generate ASCII-safe key
-          const hash = crypto.createHash('md5').update(f.name).digest('hex').slice(0, 12);
-          const newKey = `files/${hash}${f.ext}`;
-
-          // Upload to new key
-          await s3Client.client.send(new s3Client.PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: newKey,
-            Body: fileBuffer,
-            ContentType: f.mime || 'application/octet-stream'
-          }));
-
-          // Delete old key
-          await s3Client.client.send(new s3Client.DeleteObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: key
-          }));
-
-          // Update database
-          const newUrl = `${R2_PUBLIC_URL}/${newKey}`;
-          db.prepare('UPDATE material_files SET path = ? WHERE id = ?').run(newUrl, f.id);
-          console.log(`  Renamed: ${key} → ${newKey}`);
-        } catch(e) {
-          console.error(`  Error renaming ${f.name}: ${e.message}`);
-        }
-      }
-    }
-  }
-
-  // Check if database is incomplete and restore from backup if needed
-  const materialCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
-  console.log(`Current material count: ${materialCount}`);
   
-  if (USE_R2 && materialCount < 55) {
-    console.log('Material count is too low, restoring from backup...');
-    const backupBuffer = await downloadFromR2('lizi_backup.db');
-    if (backupBuffer) {
-      // Close current connection
-      db.close();
-      // Restore from backup
-      fs.writeFileSync(DB_PATH, backupBuffer);
-      // Reopen database
-      const CompatDB = require('./lib/sqlite-compat');
-      db = new CompatDB(null, DB_PATH);
-      db.pragma('journal_mode = WAL');
-      
-      // Re-run migrations on restored database
-      for (const m of migrations) {
-        const result = db.prepare('UPDATE materials SET cat = ? WHERE cat = ?').run(m.to, m.from);
-        if (result.changes > 0) {
-          console.log(`Migration on backup: ${result.changes} materials updated from "${m.from}" to "${m.to}"`);
-        }
-      }
-      
-      const newCount = db.prepare('SELECT COUNT(*) as count FROM materials').get().count;
-      console.log(`Restored database with ${newCount} materials`);
-    } else {
-      console.log('Warning: lizi_backup.db not found in R2');
-    }
-  }
-  
-  // Migration: fix orphaned materials (materials with no files due to lastInsertRowid bug)
-  if (USE_R2) {
-    try {
-      const orphanedMaterials = db.prepare(
-        'SELECT m.id, m.name, m.created_at FROM materials m LEFT JOIN material_files mf ON m.id = mf.material_id WHERE mf.id IS NULL ORDER BY m.id'
-      ).all();
-      
-      if (orphanedMaterials.length > 0) {
-        console.log(`Migration: Found ${orphanedMaterials.length} orphaned materials, attempting to recover files from R2...`);
-        const listResponse = await s3Client.client.send(new s3Client.ListObjectsV2Command({
-          Bucket: R2_BUCKET,
-          Prefix: 'uploads/',
-          MaxKeys: 1000
-        }));
-        
-        const r2FileMap = {};
-        for (const obj of (listResponse.Contents || [])) {
-          r2FileMap[obj.Key] = { size: obj.Size, modified: new Date(obj.LastModified) };
-        }
-        
-        for (const mat of orphanedMaterials) {
-          const matTime = new Date(mat.created_at).getTime();
-          const matches = [];
-          
-          for (const [key, info] of Object.entries(r2FileMap)) {
-            const fileTime = info.modified.getTime();
-            if (Math.abs(fileTime - matTime) < 60000) {
-              const ext = path.extname(key).toLowerCase();
-              if (['.png', '.gif', '.jpg', '.jpeg', '.fla'].includes(ext)) {
-                matches.push({ key, ext, size: info.size, mime: ext === '.fla' ? 'application/octet-stream' : (ext === '.gif' ? 'image/gif' : ext === '.jpg' ? 'image/jpeg' : 'image/' + ext.slice(1)) });
-              }
-            }
-          }
-          
-          if (matches.length > 0) {
-            console.log(`  Material "${mat.name}" (id=${mat.id}): found ${matches.length} matching files`);
-            for (const m of matches) {
-              const url = `${R2_PUBLIC_URL}/${m.key}`;
-              db.prepare('INSERT INTO material_files (material_id, name, path, ext, size, mime) VALUES (?, ?, ?, ?, ?, ?)')
-                .run(mat.id, mat.name + m.ext, url, m.ext, m.size, m.mime);
-            }
-          } else {
-            console.log(`  Material "${mat.name}" (id=${mat.id}): no matching files found, deleting...`);
-            db.prepare('DELETE FROM materials WHERE id = ?').run(mat.id);
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Migration (orphaned materials) failed:', e.message);
-    }
-  }
-  
-  // Upload DB immediately on startup so R2 always has latest
-  if (USE_R2) {
-    await syncDB();
-  }
+  console.log('DB setup complete');
 }
 
 // === AI Maintenance Settings API ===
@@ -1625,10 +1304,11 @@ app.get("/api/settings/ai-maintenance", (req, res) => {
   }
 });
 
-app.put("/api/settings/ai-maintenance", requireAuth, requireAdmin, (req, res) => {
+app.put("/api/settings/ai-maintenance", (req, res) => {
   try {
-    const { enabled } = req.body;
-    const username = req.authUser.username;
+    const { username, enabled } = req.body;
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = ?").get(username, "admin");
+    if (!user) return res.status(403).json({ error: "权限不足" });
     const val = enabled ? "true" : "false";
     db.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("ai_maintenance", val);
     console.log("[Settings] AI maintenance set to:", val, "by", username);
@@ -1650,10 +1330,11 @@ app.get("/api/settings/voice-maintenance", (req, res) => {
   }
 });
 
-app.put("/api/settings/voice-maintenance", requireAuth, requireAdmin, (req, res) => {
+app.put("/api/settings/voice-maintenance", (req, res) => {
   try {
-    const { enabled } = req.body;
-    const username = req.authUser.username;
+    const { username, enabled } = req.body;
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = ?").get(username, "admin");
+    if (!user) return res.status(403).json({ error: "权限不足" });
     const val = enabled ? "true" : "false";
     db.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("voice_maintenance", val);
     console.log("[Settings] Voice maintenance set to:", val, "by", username);
@@ -1664,7 +1345,32 @@ app.put("/api/settings/voice-maintenance", requireAuth, requireAdmin, (req, res)
   }
 });
 
+// === Multiview maintenance mode ===
+app.get("/api/settings/multiview-maintenance", (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM site_settings WHERE key = ?").get("multiview_maintenance");
+    const maintenance = row ? row.value === "true" : false;
+    res.json({ maintenance });
+  } catch (err) {
+    console.error("Get multiview maintenance error:", err);
+    res.json({ maintenance: false });
+  }
+});
 
+app.put("/api/settings/multiview-maintenance", (req, res) => {
+  try {
+    const { username, enabled } = req.body;
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = ?").get(username, "admin");
+    if (!user) return res.status(403).json({ error: "权限不足" });
+    const val = enabled ? "true" : "false";
+    db.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").run("multiview_maintenance", val);
+    console.log("[Settings] Multiview maintenance set to:", val, "by", username);
+    res.json({ success: true, maintenance: enabled });
+  } catch (err) {
+    console.error("Set multiview maintenance error:", err);
+    res.status(500).json({ error: "设置失败" });
+  }
+});
 
 // === WAN local file serving ===
 app.use('/wan-files', express.static(path.join(__dirname, 'data', 'wan-uploads'), {
@@ -1673,210 +1379,85 @@ app.use('/wan-files', express.static(path.join(__dirname, 'data', 'wan-uploads')
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 }));
-// === 多模型圖片生成 (MuleRouter) ===
-const MULEROUTER_API_KEY = process.env.MULEROUTER_API_KEY || ''; // key must be set in .env
-const MULEROUTER_BASE_URL = process.env.MULEROUTER_BASE_URL || 'https://api.mulerouter.ai';
+// 参考图片静态路由
+app.use('/data/wan-ref', express.static(path.join(__dirname, 'data', 'wan-ref'), {
+  maxAge: '7d',
+  setHeaders: (res, filePath) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+// 输出图片静态路由
+app.use('/data/wan-output', express.static(path.join(__dirname, 'data', 'wan-output'), {
+  maxAge: '7d',
+  setHeaders: (res, filePath) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+// 素材上傳檔案静态路由
+app.use('/data/uploads', express.static(path.join(__dirname, 'data', 'uploads'), {
+  maxAge: '30d',
+  setHeaders: (res, filePath) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+// === 多模型圖片生成 (智增增API) ===
+let ZHIZENGENG_API_KEY = process.env.ZHIZENGENG_API_KEY;
+const ZHIZENGENG_BASE_URL = process.env.ZHIZENGENG_BASE_URL || 'https://api.zhizengzeng.com';
 const WAN_USAGE_PATH = path.join(__dirname, 'data', 'wan_usage.json');
-const DAILY_BUDGET_CNY = 2.0;  // 每日限額 2 元人民幣
-const USD_TO_CNY = 7.25;
+const DAILY_FREE_CALLS = 10;  // 每天免費次數 10 次（所有模型共享）
 
-// 模型配置：API路徑、單價(USD/張)、顯示名稱、尺寸參數名
+// 模型配置：
+//   type: 'openai' = 同步 OpenAI 兼容格式 (images/generations 或 images/edits)
+//   type: 'alibaba' = 異步阿里千問格式 (需輪詢)
+//   supportsI2I: 是否支持圖生圖
 const IMAGE_MODELS = {
-  'wan2.7-image': {
-    priceCny: 0.35,
-    label: '万相2.7(图生图)',
-    defaultSize: '16:9',
-    imageField: 'image',
-    apiType: 'openai'
-  },
-  'gpt-image-2': {
-    priceCny: 0.35,
-    label: 'GPT Image 2',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
+  // === OpenAI GPT Image 系列 (預設 16:9) ===
+  'gpt-image-1': {
+    type: 'openai',
+    apiPath: '/v1/images/generations',
+    editPath: '/v1/images/edits',
+    priceCny: 0.29,
+    label: 'GPT-Image (標準)',
+    sizeParam: 'size',
+    defaultSize: '1536x1024',
+    sizeMap: { '1:1': '1024x1024', '16:9': '1536x1024', '9:16': '1024x1536' },
+    supportsI2I: true
   },
   'gpt-image-1.5': {
-    priceCny: 0.30,
-    label: 'GPT Image 1.5 (推荐)',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
+    type: 'openai',
+    apiPath: '/v1/images/generations',
+    editPath: '/v1/images/edits',
+    priceCny: 0.29,
+    label: 'GPT-Image 1.5',
+    sizeParam: 'size',
+    defaultSize: '1536x1024',
+    sizeMap: { '1:1': '1024x1024', '16:9': '1536x1024', '9:16': '1024x1536' },
+    supportsI2I: true
   },
-  'chatgpt-image-latest': {
-    priceCny: 1.00,
-    label: 'ChatGPT Image Latest',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
+  // === WAN 2.6 (< 0.30 CNY/image) ===
+  "gpt-image-2": {
+    type: "openai",
+    apiPath: "/v1/images/generations",
+    editPath: "/v1/images/edits",
+    priceCny: 1.30,
+    label: "GPT-Image 2 (旗艦)",
+    sizeParam: "size",
+    defaultSize: "1536x1024",
+    sizeMap: { "1:1": "1024x1024", "16:9": "1536x1024", "9:16": "1024x1536" },
+    supportsI2I: true
   },
-  'gpt-image-1': {
-    priceCny: 0.30,
-    label: 'GPT Image 1',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
-  },
-  'gpt-image-1-mini': {
-    priceCny: 0.10,
-    label: 'GPT Image 1 Mini (经济)',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
-  },
-  'dall-e-3': {
-    priceCny: 0.28,
-    label: 'DALL-E 3',
-    defaultSize: '1K',
-    apiType: 'openai'
-  },
-  'dall-e-2': {
+  "wan2.6-image": {
+    type: "alibaba",
+    apiPath: "/alibaba/api/v1/services/aigc/multimodal-generation/generation",
     priceCny: 0.14,
-    label: 'DALL-E 2',
-    defaultSize: '1K',
-    apiType: 'openai'
-  },
-  'gemini-2.5-flash-image': {
-    priceCny: 0.28,
-    label: 'Nano Banana(图生图)',
-    defaultSize: '16:9',
-    imageField: 'image',
-    apiType: 'gemini'
-  },
-  'gemini-3.1-flash-image': {
-    priceCny: 0.52,
-    label: 'Nano Banana 2(图生图)',
-    defaultSize: '16:9',
-    imageField: 'image',
-    apiType: 'gemini'
-  },
-  'gemini-3-pro-image': {
-    priceCny: 0.85,
-    label: 'Nano Banana Pro(图生图)',
-    defaultSize: '16:9',
-    imageField: 'image',
-    apiType: 'gemini'
-  },
-  // === Imagen 系列 === (NOTE: aigcbest.top does not support Imagen, models disabled)
-  // [API-UNSUPPORTED] 'imagen-4.0-generate-001': {
-  // [API-UNSUPPORTED] priceCny: 0.28,
-  // [API-UNSUPPORTED] label: 'Imagen 4.0',
-  // [API-UNSUPPORTED] defaultSize: '1K',
-  // [API-UNSUPPORTED] apiType: 'imagen'
-  // [API-UNSUPPORTED] },
-  // [API-UNSUPPORTED] 'imagen-4.0-ultra-generate-001': {
-  // [API-UNSUPPORTED] priceCny: 0.56,
-  // [API-UNSUPPORTED] label: 'Imagen 4.0 Ultra',
-  // [API-UNSUPPORTED] defaultSize: '1K',
-  // [API-UNSUPPORTED] apiType: 'imagen'
-  // [API-UNSUPPORTED] },
-  // [API-UNSUPPORTED] 'imagen-4.0-fast-generate-001': {
-  // [API-UNSUPPORTED] priceCny: 0.14,
-  // [API-UNSUPPORTED] label: 'Imagen 4.0 Fast',
-  // [API-UNSUPPORTED] defaultSize: '1K',
-  // [API-UNSUPPORTED] apiType: 'imagen'
-  // [API-UNSUPPORTED] },
-  // [API-UNSUPPORTED] 'imagen-3.0-generate-002': {
-  // [API-UNSUPPORTED] priceCny: 0.28,
-  // [API-UNSUPPORTED] label: 'Imagen 3.0',
-  // [API-UNSUPPORTED] defaultSize: '1K',
-  // [API-UNSUPPORTED] apiType: 'imagen'
-  // [API-UNSUPPORTED] },
-  // === Grok 系列 ===
-  'grok-imagine-image-pro': {
-    priceCny: 0.50,
-    label: 'Grok Imagine Pro',
-    defaultSize: '1K',
-    apiType: 'openai'
-  },
-  'grok-imagine-image': {
-    priceCny: 0.28,
-    label: 'Grok Imagine',
-    defaultSize: '1K',
-    apiType: 'openai'
-  },
-  // === Seedream 系列 ===
-  // [UNAVAILABLE] 'doubao-seedream-5-0-250612': {
-  // [UNAVAILABLE] priceCny: 0.28,
-  // [UNAVAILABLE] label: 'Seedream 5.0',
-  // [UNAVAILABLE] defaultSize: '1K',
-  // [UNAVAILABLE] apiType: 'openai'
-  // [UNAVAILABLE] },
-  // [UNAVAILABLE] 'doubao-seedream-5-0-lite-250612': {
-  // [UNAVAILABLE] priceCny: 0.14,
-  // [UNAVAILABLE] label: 'Seedream 5.0 Lite',
-  // [UNAVAILABLE] defaultSize: '1K',
-  // [UNAVAILABLE] apiType: 'openai'
-  // [UNAVAILABLE] },
-  'doubao-seedream-4-5-251128': {
-    priceCny: 0.28,
-    label: 'Seedream 4.5',
-    defaultSize: '1K',
-    apiType: 'openai'
-  },
-  'doubao-seedream-4-0-250828': {
-    priceCny: 0.28,
-    label: 'Seedream 4.0',
-    defaultSize: '1K',
-    apiType: 'openai'
-  },
-  // [UNAVAILABLE] 'doubao-seedream-3-0-t2i-250415': {
-  // [UNAVAILABLE] priceCny: 0.14,
-  // [UNAVAILABLE] label: 'Seedream 3.0',
-  // [UNAVAILABLE] defaultSize: '1K',
-  // [UNAVAILABLE] apiType: 'openai'
-  // [UNAVAILABLE] },
-  'doubao-seededit-3-0-i2i-250628': {
-    priceCny: 0.28,
-    label: 'SeedEdit 3.0 (图生图)',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
-  },
-  'step-image-edit-2': {
-    priceCny: 0.15,
-    label: '阶跃图像编辑(图生图)',
-    defaultSize: '1K',
-    imageField: 'image',
-    apiType: 'openai'
+    label: "Wan2.6 Image",
+    sizeParam: "size",
+    defaultSize: "1024*1024",
+    sizeMap: { "1:1": "1024*1024", "16:9": "1280*720", "9:16": "720*1280" },
+    supportsI2I: true,
+    imageInContent: true
   },
 };
-
-// 計算某模型剩餘可用次數 (考慮總預算)
-function getModelDailyLimit(modelKey, username, today, allUsage) {
-  const model = IMAGE_MODELS[modelKey];
-  if (!model) return 0;
-  
-  // 如果沒有用戶上下文，返回最大可能次數（用於公開接口）
-  if (!username) {
-    return Math.floor(DAILY_BUDGET_CNY / model.priceCny);
-  }
-  
-  // 检查用户角色，admin 不限制
-  try {
-    const user = db.prepare('SELECT role FROM users WHERE username = ?').get(username);
-    if (user && user.role === 'admin') {
-      return 99999; // admin 无限次数
-    }
-  } catch (e) {
-    console.error('Check user role error:', e.message);
-  }
-  
-  // 計算今日已花費總額
-  const userData = allUsage[username];
-  let spent = 0;
-  if (userData && userData.date === today && userData.models) {
-    for (const [key, count] of Object.entries(userData.models)) {
-      const m = IMAGE_MODELS[key];
-      if (m) spent += count * m.priceCny;
-    }
-  }
-  
-  // 剩餘預算能生成多少次
-  const remainingBudget = DAILY_BUDGET_CNY - spent;
-  if (remainingBudget <= 0) return 0;
-  return Math.floor(remainingBudget / model.priceCny);
-}
 
 function loadWanUsage() {
   try {
@@ -1891,46 +1472,96 @@ function saveWanUsage(data) {
   fs.writeFileSync(WAN_USAGE_PATH, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// GET /api/ai/wan/usage - 返回各模型剩餘次數
-app.get('/api/ai/wan/usage', requireAuth, (req, res) => {
-  const username = req.authUser.username;
-  
+// 获取用戶今日用量数据，自动初始化/重置
+function getUserUsage(username) {
   const today = new Date().toISOString().slice(0, 10);
   const allUsage = loadWanUsage();
-  
-  // 結構: { username: { date: 'YYYY-MM-DD', models: { 'wan2.6-t2i': 3, 'qwen-image-max': 1 } } }
   let userData = allUsage[username];
-  
-  // 初始化或重置（也處理舊格式遷移）
-  if (!userData || userData.date !== today || !userData.models) {
-    const models = {};
-    for (const key of Object.keys(IMAGE_MODELS)) {
-      models[key] = 0;
-    }
-    allUsage[username] = { date: today, models };
+  if (!userData || userData.date !== today) {
+    userData = { date: today, calls: 0, models: {} };
+    allUsage[username] = userData;
     saveWanUsage(allUsage);
-    userData = allUsage[username];
   }
-  
-  // 計算各模型剩餘
-  const modelsInfo = {};
+  // 兼容旧格式（遷移 spent 到 calls）
+  if (typeof userData.calls !== 'number') {
+    let totalCalls = 0;
+    for (const count of Object.values(userData.models || {})) {
+      totalCalls += count;
+    }
+    userData.calls = totalCalls;
+    delete userData.spent;
+    allUsage[username] = userData;
+    saveWanUsage(allUsage);
+  }
+  return { allUsage, userData, today };
+}
+
+// 检查用户是否还能用某模型（返回剩余预算和次数）
+
+// 检查用户是否为管理员
+function isAdmin(username) {
+  try {
+    const user = db.prepare('SELECT role FROM users WHERE username = ?').get(username);
+    return user && user.role === 'admin';
+  } catch (e) {
+    return false;
+  }
+}
+
+function getUsageInfo(username, modelKey) {
+  const { userData } = getUserUsage(username);
+  const model = IMAGE_MODELS[modelKey];
+  if (!model) return null;
+  const isAdminUser = isAdmin(username);
+  const remaining = Math.max(0, DAILY_FREE_CALLS - userData.calls);
+  const canUse = isAdminUser || remaining > 0;
+  const maxCalls = isAdminUser ? 9999 : remaining;
+  const used = userData.models[modelKey] || 0;
+  return {
+    label: model.label,
+    priceCny: model.priceCny,
+    used: used,
+    canUse: canUse,
+    maxCalls: maxCalls,
+    calls: userData.calls,
+    freeCalls: DAILY_FREE_CALLS,
+    remaining: remaining,
+    isAdmin: isAdminUser
+  };
+}
+
+// 构建所有模型的用量概览
+function buildModelsOverview(username) {
+  const { userData } = getUserUsage(username);
+  const calls = userData.calls || 0;
+  const remaining = Math.max(0, DAILY_FREE_CALLS - calls);
+  const isAdminUser = isAdmin(username);
+  const models = {};
   for (const [key, model] of Object.entries(IMAGE_MODELS)) {
-    const used = allUsage[username].models[key] || 0;
-    const limit = getModelDailyLimit(key, username, today, allUsage);
-    modelsInfo[key] = {
+    const used = userData.models[key] || 0;
+    models[key] = {
       label: model.label,
+      priceCny: model.priceCny,
       used: used,
-      limit: limit,
-      remaining: Math.max(0, limit - used),
-      priceCny: model.priceCny
+      maxCalls: isAdminUser ? 9999 : remaining,
+      canUse: isAdminUser || remaining > 0
     };
   }
-  
-  res.json({
-    date: today,
-    dailyBudget: DAILY_BUDGET_CNY,
-    models: modelsInfo
-  });
+  return {
+    date: userData.date,
+    calls: calls,
+    freeCalls: DAILY_FREE_CALLS,
+    remaining: remaining,
+    models,
+    isAdmin: isAdminUser
+  };
+}
+
+// GET /api/ai/wan/usage - 返回用量概览（共享预算）
+app.get('/api/ai/wan/usage', (req, res) => {
+  const username = req.headers['x-username'];
+  if (!username) return res.status(401).json({ error: '请先登录' });
+  res.json(buildModelsOverview(username));
 });
 
 // GET /api/ai/wan/models - 返回可用模型列表
@@ -1939,24 +1570,40 @@ app.get('/api/ai/wan/models', (req, res) => {
   for (const [key, model] of Object.entries(IMAGE_MODELS)) {
     models[key] = {
       label: model.label,
-      priceUsd: +(model.priceCny / USD_TO_CNY).toFixed(4),
-      priceCny: model.priceCny,
-      dailyLimit: getModelDailyLimit(key)
+      priceCny: model.priceCny
     };
   }
   res.json(models);
 });
 
 // POST /api/ai/host-image - Upload reference image to COS
-app.post('/api/ai/host-image', requireAuth, upload.single('image'), async (req, res) => {
-  const username = req.authUser.username;
+app.post('/api/ai/host-image', upload.single('image'), async (req, res) => {
+  const username = req.headers['x-username'];
+  if (!username) return res.status(401).json({ error: '请先登录' });
   if (!req.file) return res.status(400).json({ error: '请选择图片' });
   
   try {
     const ext = path.extname(req.file.originalname) || '.png';
-    const key = 'wan-ref/' + crypto.randomUUID() + ext;
-    const url = await uploadToR2(key, req.file.buffer, req.file.mimetype);
-    console.log('[IMG] Hosted image uploaded:', url);
+    const filename = crypto.randomUUID() + ext;
+    
+    // Try R2 first, fallback to local storage
+    let url;
+    try {
+      const key = 'wan-ref/' + filename;
+      url = await saveToLocal(key, req.file.buffer, req.file.mimetype);
+      console.log('[IMG] Hosted image uploaded to R2:', url);
+    } catch (r2Err) {
+      // R2 not configured, use local storage
+      const localDir = path.join(__dirname, 'public', 'uploads', 'ai-ref');
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      const localPath = path.join(localDir, filename);
+      fs.writeFileSync(localPath, req.file.buffer);
+      url = '/uploads/ai-ref/' + filename;
+      console.log('[IMG] Hosted image saved locally:', url);
+    }
+    
     res.json({ url });
   } catch (e) {
     console.error('[IMG] Host image error:', e.message);
@@ -1964,265 +1611,515 @@ app.post('/api/ai/host-image', requireAuth, upload.single('image'), async (req, 
   }
 });
 
-const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY || ''; // key must be set in .env
+// POST /api/ai/wan/generate - 多模型生成（支持同步OpenAI和异步阿里两种格式）
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// POST /api/ai/wan/generate - 万相2.7 图像生成 (OpenAI compatible via aigcbest)
-app.post('/api/ai/wan/generate', requireAuth, async (req, res) => {
-  const username = req.authUser.username;
+// 辅助：下载图片URL转为Buffer
+function resolveImageUrl(url) {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) return url;
+  // Relative path - prepend site base URL
+  const base = process.env.SITE_URL || "https://lizisucaiwang.online";
+  return base + (url.startsWith("/") ? "" : "/") + url;
+}
+
+async function downloadImageBuffer(url) {
+  const resolvedUrl = resolveImageUrl(url);
+  try {
+    const resp = await fetch(resolvedUrl);
+    if (!resp.ok) {
+      console.error('[IMG] Download failed:', resolvedUrl.substring(0, 100), 'Status:', resp.status);
+      throw new Error('下载图片失败: ' + resp.status);
+    }
+    return Buffer.from(await resp.arrayBuffer());
+  } catch (err) {
+    console.error('[IMG] Download error:', err.message, 'URL:', resolvedUrl.substring(0, 100));
+    throw err;
+  }
+}
+
+// 辅助：保存图片Buffer到存储，返回永久URL
+async function saveImageToStorage(imgBuffer) {
+  try {
+    const key = 'wan-output/' + crypto.randomUUID() + '.png';
+    const permanentUrl = await saveToLocal(key, imgBuffer, 'image/png');
+    return permanentUrl;
+  } catch (e) {
+    // 本地存储 fallback
+    const localDir = path.join(__dirname, 'public', 'uploads', 'ai-output');
+    if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+    const filename = crypto.randomUUID() + '.png';
+    fs.writeFileSync(path.join(localDir, filename), imgBuffer);
+    return '/uploads/ai-output/' + filename;
+  }
+}
+
+// === OpenAI 同步模式 ===
+async function generateOpenAI(modelKey, modelConfig, prompt, image_url, size) {
+  let images = [];
+  
+  if (image_url && modelConfig.supportsI2I && modelConfig.editPath) {
+    // 图生图 - 使用 images/edits (需要 FormData)
+    const imgBuffer = await downloadImageBuffer(image_url);
+    const formData = new FormData();
+    formData.append('model', modelKey);
+    formData.append('prompt', prompt);
+    formData.append('n', '1');
+    let i2iSize = modelConfig.defaultSize;
+    if (size) {
+      if (modelConfig.sizeMap && modelConfig.sizeMap[size]) i2iSize = modelConfig.sizeMap[size];
+      else if (/^\d+x\d+$/.test(size)) i2iSize = size;
+    }
+    formData.append('size', i2iSize);
+    // 创建Blob并附加
+    const blob = new Blob([imgBuffer], { type: 'image/png' });
+    formData.append('image', blob, 'input.png');
+    
+    console.log('[IMG] OpenAI i2i request for', modelKey);
+    const apiResp = await fetch(ZHIZENGENG_BASE_URL + modelConfig.editPath, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + ZHIZENGENG_API_KEY },
+      body: formData
+    });
+    
+    const data = await apiResp.json();
+    if (!apiResp.ok || data.error) {
+      throw new Error(data.error?.message || data.error || '图片编辑失败');
+    }
+    // OpenAI返回base64或url
+    if (data.data) {
+      for (const item of data.data) {
+        if (item.b64_json) {
+          images.push(Buffer.from(item.b64_json, 'base64'));
+        } else if (item.url) {
+          images.push(await downloadImageBuffer(item.url));
+        }
+      }
+    }
+  } else {
+    // 文生图 - 使用 images/generations (JSON)
+    // 映射尺寸：前端可能发送 '16:9' 等比例格式，需要转换为API支持的尺寸
+    let actualSize = modelConfig.defaultSize;
+    if (size) {
+      if (modelConfig.sizeMap && modelConfig.sizeMap[size]) {
+        actualSize = modelConfig.sizeMap[size];
+      } else if (/^\d+x\d+$/.test(size)) {
+        actualSize = size; // 已经是 WxH 格式
+      }
+      // 其他格式（如 '16:9'）使用默认尺寸
+    }
+    const requestBody = { model: modelKey, prompt, n: 1, size: actualSize };
+    
+    console.log('[IMG] OpenAI t2i request for', modelKey, '- prompt:', prompt.substring(0, 50));
+    const apiResp = await fetch(ZHIZENGENG_BASE_URL + modelConfig.apiPath, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + ZHIZENGENG_API_KEY
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    const data = await apiResp.json();
+    if (!apiResp.ok || data.error) {
+      throw new Error(data.error?.message || data.error || '图片生成失败');
+    }
+    if (data.data && data.data.length > 0) {
+      for (const item of data.data) {
+        if (item.b64_json) {
+          images.push(Buffer.from(item.b64_json, 'base64'));
+        } else if (item.url) {
+          images.push(await downloadImageBuffer(item.url));
+        }
+      }
+    }
+  }
+  
+  return images; // 返回图片Buffer数组
+}
+
+// === 阿里千問同步模式 ===
+async function generateAlibaba(modelKey, modelConfig, prompt, image_url, size) {
+  // 构建阿里千问 API 请求体
+  const requestBody = {
+    model: modelKey,
+    input: {
+      messages: [
+        {
+          role: "user",
+          content: [{ text: prompt }]
+        }
+      ]
+    },
+    parameters: {
+      n: 1
+    }
+  };
+  
+  // 添加尺寸参数
+  let actualSize = modelConfig.defaultSize;
+  if (size) {
+    if (modelConfig.sizeMap && modelConfig.sizeMap[size]) {
+      actualSize = modelConfig.sizeMap[size];
+    } else if (/^\d+\*\d+$/.test(size)) {
+      actualSize = size;
+    }
+  }
+  requestBody.parameters.size = actualSize;
+  
+  // 如果有参考图片：转换为 base64 格式
+  if (image_url && modelConfig.supportsI2I) {
+    try {
+      const imgBuffer = await downloadImageBuffer(image_url);
+      const base64Image = 'data:image/png;base64,' + imgBuffer.toString('base64');
+      if (modelConfig.imageInContent) {
+        requestBody.input.messages[0].content.unshift({ image: base64Image });
+      } else {
+        requestBody.parameters.ref_image_url = base64Image;
+      }
+      console.log('[IMG] Alibaba i2i: converted image to base64, size:', imgBuffer.length);
+    } catch (e) {
+      console.error('[IMG] Alibaba i2i: failed to convert image to base64:', e.message);
+      throw new Error('無法處理參考圖片: ' + e.message);
+    }
+  }
+  
+  console.log('[IMG] Alibaba sync request for', modelKey, '- prompt:', prompt.substring(0, 50));
+  
+  const apiResp = await fetch(ZHIZENGENG_BASE_URL + modelConfig.apiPath, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + ZHIZENGENG_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  const result = await apiResp.json();
+  
+  console.log('[IMG] Alibaba API response:', JSON.stringify(result).substring(0, 500));
+  
+  if (!apiResp.ok) {
+    console.error('[IMG] Alibaba API error:', JSON.stringify(result).substring(0, 500));
+    throw new Error(result.message || result.error?.message || '阿里 API 调用失败');
+  }
+  
+  // 提取图片 URL
+  const images = [];
+  if (result.output?.choices) {
+    for (const choice of result.output.choices) {
+      if (choice.message?.content) {
+        for (const item of choice.message.content) {
+          if (item.image) {
+            images.push(await downloadImageBuffer(item.image));
+          }
+        }
+      }
+    }
+  }
+  
+  if (images.length === 0) {
+    throw new Error('阿里 API 未返回图片');
+  }
+  
+  return images;
+}
+
+
+// === Google Gemini 模式 ===
+async function generateGemini(modelKey, modelConfig, prompt, image_url, size) {
+  // 構建 Gemini API 請求
+  const parts = [{ text: prompt }];
+  
+  // 如果有參考圖片，加入 inline_data
+  if (image_url && modelConfig.supportsI2I) {
+    const imgBuffer = await downloadImageBuffer(image_url);
+    parts.push({
+      inline_data: {
+        mime_type: 'image/png',
+        data: imgBuffer.toString('base64')
+      }
+    });
+  }
+  
+  // 構建請求體
+  const requestBody = {
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities: ['IMAGE', 'TEXT']
+    }
+  };
+  
+  // 設定 aspect ratio
+  let aspectRatio = modelConfig.defaultSize || '16:9';
+  if (size) {
+    if (modelConfig.sizeMap && modelConfig.sizeMap[size]) {
+      aspectRatio = modelConfig.sizeMap[size];
+    } else if (/^\d+:\d+$/.test(size)) {
+      aspectRatio = size;
+    }
+  }
+  // aspectRatio via responseModalities only; responseFormat not supported by zhizengzeng proxy
+  // aspectRatio hint added to prompt instead if needed
+  
+  console.log('[IMG] Gemini request for', modelKey, '- aspectRatio:', aspectRatio);
+  
+  // 智增增 Gemini API URL 格式
+  const geminiUrl = ZHIZENGENG_BASE_URL.replace('/v1', '') + '/google/v1beta/models/' + modelKey + ':generateContent';
+  
+  const apiResp = await fetch(geminiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-goog-api-key': ZHIZENGENG_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  const result = await apiResp.json();
+  
+  if (!apiResp.ok) {
+    console.error('[IMG] Gemini API error:', JSON.stringify(result).substring(0, 500));
+    throw new Error(result.error?.message || 'Gemini API 調用失敗');
+  }
+  
+  // 提取圖片 (base64 inline_data)
+  const images = [];
+  const candidates = result.candidates || [];
+  for (const candidate of candidates) {
+    const contentParts = candidate.content?.parts || [];
+    for (const part of contentParts) {
+      if (part.inline_data?.data) {
+        images.push(Buffer.from(part.inline_data.data, 'base64'));
+      } else if (part.inlineData?.data) {
+        images.push(Buffer.from(part.inlineData.data, 'base64'));
+      }
+    }
+  }
+  
+  if (images.length === 0) {
+    throw new Error('Gemini API 未返回图片');
+  }
+  
+  return images;
+}
+
+// === Grok (xAI) 模式 ===
+async function generateGrok(modelKey, modelConfig, prompt, image_url, size) {
+  const requestBody = {
+    model: modelKey,
+    prompt: prompt,
+    n: 1,
+    response_format: "b64_json"
+  };
+  
+  // 只有当 sizeParam 存在时才添加 size
+  if (modelConfig.sizeParam && modelConfig.defaultSize) {
+    let actualSize = modelConfig.defaultSize;
+    if (size) {
+      if (modelConfig.sizeMap && modelConfig.sizeMap[size]) {
+        actualSize = modelConfig.sizeMap[size];
+      } else if (/^\d+x\d+$/.test(size)) {
+        actualSize = size;
+      }
+    }
+    requestBody.size = actualSize;
+  }
+  
+  // Grok 不支持图生图，直接使用文生图
+  console.log('[IMG] Grok t2i request for', modelKey, '- prompt:', prompt.substring(0, 50));
+  const apiResp = await fetch(ZHIZENGENG_BASE_URL + modelConfig.apiPath, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + ZHIZENGENG_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  const data = await apiResp.json();
+  if (!apiResp.ok || data.error) {
+    throw new Error(data.error?.message || data.error || 'Grok 图片生成失败');
+  }
+  
+  const images = [];
+  if (data.data && data.data.length > 0) {
+    for (const item of data.data) {
+      if (item.b64_json) {
+        images.push(Buffer.from(item.b64_json, 'base64'));
+      } else if (item.url) {
+        images.push(await downloadImageBuffer(item.url));
+      }
+    }
+  }
+  return images;
+}
+
+// === 字节豆包 Doubao/Seedream 模式 ===
+async function generateDoubao(modelKey, modelConfig, prompt, image_url, size) {
+  const requestBody = {
+    model: modelKey,
+    prompt: prompt,
+    n: 1
+  };
+
+  let actualSize = modelConfig.defaultSize;
+  if (size) {
+    if (modelConfig.sizeMap && modelConfig.sizeMap[size]) actualSize = modelConfig.sizeMap[size];
+    else if (/^\d+x\d+$/.test(size)) actualSize = size;
+  }
+  requestBody.size = actualSize;
+
+  if (image_url && modelConfig.supportsI2I) {
+    requestBody.image = resolveImageUrl(image_url);
+    console.log('[IMG] Doubao i2i for', modelKey);
+  } else {
+    console.log('[IMG] Doubao t2i for', modelKey, '- prompt:', prompt.substring(0, 50));
+  }
+
+  const apiResp = await fetch(ZHIZENGENG_BASE_URL + modelConfig.apiPath, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + ZHIZENGENG_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  const data = await apiResp.json();
+  if (!apiResp.ok || data.error) {
+    console.error('[IMG] Doubao API error:', JSON.stringify(data).substring(0, 500));
+    throw new Error(data.error?.message || data.error || '豆包 图片生成失败');
+  }
+
+  const images = [];
+  if (data.data) {
+    for (const item of data.data) {
+      if (item.b64_json) {
+        images.push(Buffer.from(item.b64_json, 'base64'));
+      } else if (item.url) {
+        images.push(await downloadImageBuffer(item.url));
+      }
+    }
+  }
+  return images;
+}
+
+// === Qwen 通义万相模式 ===
+async function generateQwen(modelKey, modelConfig, prompt, image_url, size) {
+  const requestBody = {
+    model: modelKey,
+    prompt: prompt,
+    n: 1
+  };
+
+  let actualSize = modelConfig.defaultSize;
+  if (size) {
+    if (modelConfig.sizeMap && modelConfig.sizeMap[size]) actualSize = modelConfig.sizeMap[size];
+    else if (/^\d+x\d+$/.test(size)) actualSize = size;
+  }
+  requestBody.size = actualSize;
+
+  if (image_url && modelConfig.supportsI2I) {
+    requestBody.image = resolveImageUrl(image_url);
+    console.log('[IMG] Qwen i2i for', modelKey, '- image:', requestBody.image.substring(0, 100));
+  } else {
+    console.log('[IMG] Qwen t2i for', modelKey, '- prompt:', prompt.substring(0, 50));
+  }
+
+  const apiResp = await fetch(ZHIZENGENG_BASE_URL + modelConfig.apiPath, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + ZHIZENGENG_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  const data = await apiResp.json();
+  if (!apiResp.ok || data.error) {
+    console.error('[IMG] Qwen API error:', JSON.stringify(data).substring(0, 500));
+    throw new Error(data.error?.message || data.error || 'Qwen 图片生成失败');
+  }
+
+  const images = [];
+  if (data.data) {
+    for (const item of data.data) {
+      if (item.b64_json) {
+        images.push(Buffer.from(item.b64_json, 'base64'));
+      } else if (item.url) {
+        images.push(await downloadImageBuffer(item.url));
+      }
+    }
+  }
+  return images;
+}
+
+// === 主生成接口 ===
+app.post('/api/ai/wan/generate', async (req, res) => {
+  const username = req.headers['x-username'];
+  if (!username) return res.status(401).json({ error: '请先登录' });
   
   const { prompt, model: modelKey, size, image_url } = req.body;
   if (!prompt) return res.status(400).json({ error: '请输入提示词' });
   
-  // 驗證模型
   const modelConfig = IMAGE_MODELS[modelKey];
   if (!modelConfig) {
     return res.status(400).json({ error: '不支持的模型: ' + modelKey });
   }
   
-  // 檢查該模型今日配額
-  const today = new Date().toISOString().slice(0, 10);
-  const allUsage = loadWanUsage();
-  const userData = allUsage[username] || { date: today, models: {} };
-  
-  if (userData.date !== today) {
-    userData.date = today;
-    userData.models = {};
-  }
-  
-  const used = userData.models[modelKey] || 0;
-  const limit = getModelDailyLimit(modelKey, username, today, allUsage);
-  
-  // admin 不限制
-  let isAdmin = false;
-  try {
-    const user = db.prepare('SELECT role FROM users WHERE username = ?').get(username);
-    isAdmin = user && user.role === 'admin';
-  } catch (e) {}
-  
-  if (!isAdmin && used >= limit) {
-    return res.status(429).json({ 
-      error: modelConfig.label + ' 今日次數已用完（' + used + '/' + limit + '）',
-      models: buildModelsInfo(username, today, allUsage)
+  // 检查配额（所有模型共享每日预算，管理员不限）
+  const usageInfo = getUsageInfo(username, modelKey);
+  if (!usageInfo.canUse) {
+    return res.status(429).json({
+      error: `今日免費次數已用完（已用 ${usageInfo.calls} / ${usageInfo.freeCalls} 次）`,
+      overview: buildModelsOverview(username)
     });
   }
   
   try {
-    // 計算尺寸 (OpenAI format uses pixel values like 1024x1024)
-    const sizeMap = { '1K': '1024x1024', '2K': '2048x2048', '4K': '4096x4096', '16:9': '1792x1024', '16:9_2K': '2048x1152' };
-    let actualSize = sizeMap[modelConfig.defaultSize] || '1024x1024';
-    if (size && sizeMap[size]) {
-      actualSize = sizeMap[size];
-    } else if (size && size.includes('x')) {
-      actualSize = size;
-    }
+    console.log('[IMG]', modelConfig.label, 'for', username, '- prompt:', prompt.substring(0, 50));
     
-    // wan2.7 / step-image-edit-2 with image uses /images/edits endpoint (multipart/form-data)
-    let apiData;
-    if ((modelKey === 'wan2.7-image' || modelKey === 'step-image-edit-2') && image_url) {
-      const imgResp = await fetch(image_url);
-      const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
-      const imgCType = imgResp.headers.get('content-type') || 'image/png';
-      
-      const boundary = '----WB' + crypto.randomUUID().replace(/-/g, '');
-      const crlf = '\r\n';
-      
-      const parts = [];
-      // image part
-      parts.push(Buffer.from('--' + boundary + crlf + 'Content-Disposition: form-data; name="image"; filename="ref.png"' + crlf + 'Content-Type: ' + imgCType + crlf + crlf));
-      parts.push(imgBuffer);
-      parts.push(Buffer.from(crlf));
-      // prompt part
-      parts.push(Buffer.from('--' + boundary + crlf + 'Content-Disposition: form-data; name="prompt"' + crlf + crlf + prompt + crlf));
-      // model part
-      parts.push(Buffer.from('--' + boundary + crlf + 'Content-Disposition: form-data; name="model"' + crlf + crlf + modelKey + crlf));
-      // n part
-      parts.push(Buffer.from('--' + boundary + crlf + 'Content-Disposition: form-data; name="n"' + crlf + crlf + '1' + crlf));
-      // response_format part
-      parts.push(Buffer.from('--' + boundary + crlf + 'Content-Disposition: form-data; name="response_format"' + crlf + crlf + 'url' + crlf));
-      // closing boundary
-      parts.push(Buffer.from('--' + boundary + '--' + crlf));
-      
-      const body = Buffer.concat(parts);
-      
-      console.log('[IMG]', modelConfig.label, '(edits) for', username, '- prompt:', prompt.substring(0, 50), '- img:', imgBuffer.length, 'bytes');
-      
-      const apiResp = await fetch('https://api2.aigcbest.top/v1/images/edits', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + DASHSCOPE_API_KEY,
-          'Content-Type': 'multipart/form-data; boundary=' + boundary
-        },
-        body: body
-      });
-      
-      apiData = await apiResp.json();
-      console.log('[IMG] Edits Response:', apiResp.status, '- has data:', !!apiData.data);
-      
-      if (!apiResp.ok || apiData.error) {
-        const errMsg = apiData.error?.message || JSON.stringify(apiData.error).substring(0, 200);
-        console.error('[IMG] Edits API error:', errMsg);
-        throw new Error(errMsg);
-      }
-    } else if (modelConfig.apiType === 'imagen') {
-      // Imagen native format: uses :predict endpoint with instances/parameters
-      const aspectRatio = (size === '16:9' || modelConfig.defaultSize === '16:9') ? '16:9' : '1:1';
-      const imagenBody = {
-        instances: [{ prompt: prompt }],
-        parameters: { sampleCount: 1, aspectRatio: aspectRatio }
-      };
-      console.log('[IMG]', modelConfig.label, '(imagen) for', username, '- prompt:', prompt.substring(0, 50), '- aspect:', aspectRatio);
-      const apiResp = await fetch('https://api2.aigcbest.top/v1beta/models/' + modelKey + ':predict?key=' + DASHSCOPE_API_KEY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagenBody)
-      });
-      apiData = await apiResp.json();
-      console.log('[IMG] Imagen Response:', apiResp.status, '- predictions:', !!(apiData.predictions && apiData.predictions.length));
-      if (!apiResp.ok || apiData.error) {
-        const errMsg = apiData.error && apiData.error.message ? apiData.error.message : JSON.stringify(apiData).substring(0, 200);
-        console.error('[IMG] Imagen API error:', errMsg);
-        throw new Error(errMsg);
-      }
-      // Parse Imagen response: { predictions: [{ bytesBase64Encoded, mimeType }] }
-      const imagenImages = [];
-      if (apiData.predictions) {
-        for (const pred of apiData.predictions) {
-          if (pred.bytesBase64Encoded) imagenImages.push({ b64_json: pred.bytesBase64Encoded });
-          else if (pred.image) imagenImages.push({ b64_json: pred.image });
-        }
-      }
-      apiData.data = imagenImages;
-    } else if (modelConfig.apiType === 'gemini') {
-      // Gemini native format
-      const aspectRatio = (size === '16:9' || modelConfig.defaultSize === '16:9') ? '16:9' : '1:1';
-      
-      const geminiParts = [];
-      
-      if (image_url) {
-        try {
-          const imgResp = await fetch(image_url);
-          const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
-          const imgBase64 = imgBuffer.toString('base64');
-          const cType = imgResp.headers.get('content-type') || 'image/png';
-          geminiParts.push({ inlineData: { mimeType: cType, data: imgBase64 } });
-          console.log('[IMG] Gemini: loaded image, base64 length:', imgBase64.length);
-        } catch (imgErr) {
-          console.error('[IMG] Gemini: failed to load image:', imgErr.message);
-        }
-      }
-      
-      geminiParts.push({ text: prompt });
-      
-      const geminiBody = {
-        contents: [{ role: 'user', parts: geminiParts }],
-        generationConfig: {
-          responseModalities: ['IMAGE'],
-          imageConfig: { aspectRatio: aspectRatio }
-        }
-      };
-      
-      console.log('[IMG]', modelConfig.label, '(gemini) for', username, '- prompt:', prompt.substring(0, 50), '- aspect:', aspectRatio);
-      
-      const apiResp = await fetch('https://api2.aigcbest.top/v1beta/models/' + modelKey + ':generateContent/?key=' + DASHSCOPE_API_KEY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiBody)
-      });
-      
-      apiData = await apiResp.json();
-      console.log('[IMG] Gemini Response:', apiResp.status, '- has candidates:', !!apiData.candidates);
-      
-      if (!apiResp.ok || apiData.error) {
-        const errMsg = apiData.error?.message || JSON.stringify(apiData.error).substring(0, 200);
-        console.error('[IMG] Gemini API error:', errMsg);
-        throw new Error(errMsg);
-      }
-      
-      // Extract images from Gemini response into apiData.data format
-      const gemImageData = [];
-      if (apiData.candidates && apiData.candidates[0]?.content?.parts) {
-        for (const part of apiData.candidates[0].content.parts) {
-          if (part.inlineData) {
-            gemImageData.push({ b64_json: part.inlineData.data });
-          } else if (part.fileData) {
-            gemImageData.push({ url: part.fileData.fileUri });
-          }
-        }
-      }
-      apiData.data = gemImageData;
+    let imageBuffers = [];
+    
+    if (modelConfig.type === 'openai') {
+      imageBuffers = await generateOpenAI(modelKey, modelConfig, prompt, image_url, size);
+    } else if (modelConfig.type === 'qwen') {
+      imageBuffers = await generateQwen(modelKey, modelConfig, prompt, image_url, size);
+    } else if (modelConfig.type === 'alibaba') {
+      imageBuffers = await generateAlibaba(modelKey, modelConfig, prompt, image_url, size);
+    } else if (modelConfig.type === 'grok') {
+      imageBuffers = await generateGrok(modelKey, modelConfig, prompt, image_url, size);
+    } else if (modelConfig.type === 'doubao') {
+      imageBuffers = await generateDoubao(modelKey, modelConfig, prompt, image_url, size);
+    } else if (modelConfig.type === 'gemini') {
+      imageBuffers = await generateGemini(modelKey, modelConfig, prompt, image_url, size);
     } else {
-      // OpenAI compatible format for other models or text-only
-      const requestBody = {
-        model: modelKey,
-        prompt: prompt,
-        size: actualSize,
-        n: 1
-      };
-      
-      if (image_url && modelConfig.imageField) {
-        requestBody[modelConfig.imageField] = image_url;
-      }
-      
-      console.log('[IMG]', modelConfig.label, 'for', username, '- prompt:', prompt.substring(0, 50), '- size:', actualSize, '- image:', image_url ? 'yes' : 'no');
-      
-      const apiResp = await fetch('https://api2.aigcbest.top/v1/images/generations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + DASHSCOPE_API_KEY
-        },
-        body: JSON.stringify(requestBody)
-      });
-      
-      apiData = await apiResp.json();
-      console.log('[IMG] Response:', apiResp.status, '- has data:', !!apiData.data);
-      
-      if (!apiResp.ok || apiData.error) {
-        const errMsg = apiData.error?.message || JSON.stringify(apiData.error).substring(0, 200);
-        console.error('[IMG] API error:', errMsg);
-        throw new Error(errMsg);
-      }
+      throw new Error('未知的模型类型: ' + modelConfig.type);
     }
     
-    // 提取圖片 (支持 URL 或 Base64)
-    const imageData = apiData.data || [];
-    if (imageData.length === 0) {
-      throw new Error('API 未返回图片');
+    if (imageBuffers.length === 0) {
+      throw new Error('未生成任何图片');
     }
     
-    // 下載並上傳到 R2 (支持 URL 和 Base64)
+    // 保存所有图片到存储
     const finalImages = [];
-    for (const item of imageData) {
-      try {
-        let imgBuffer;
-        if (item.url && item.url.startsWith('http')) {
-          // 從 URL 下載
-          const imgResp = await fetch(item.url);
-          imgBuffer = Buffer.from(await imgResp.arrayBuffer());
-        } else if (item.b64_json) {
-          // 從 Base64 解碼
-          imgBuffer = Buffer.from(item.b64_json, 'base64');
-        } else {
-          console.warn('[IMG] No image data in response item');
-          continue;
-        }
-        const key = 'wan-output/' + crypto.randomUUID() + '.png';
-        const permanentUrl = await uploadToR2(key, imgBuffer, 'image/png');
-        finalImages.push(permanentUrl);
-      } catch (dlErr) {
-        console.warn('[IMG] Failed to process image:', dlErr.message);
-      }
+    for (const buf of imageBuffers) {
+      const url = await saveImageToStorage(buf);
+      finalImages.push(url);
     }
     
-    // 更新用量
+    // 更新用量（共享预算）
+    const { allUsage, userData } = getUserUsage(username);
     userData.models[modelKey] = (userData.models[modelKey] || 0) + 1;
+    userData.calls = (userData.calls || 0) + 1;
     allUsage[username] = userData;
     saveWanUsage(allUsage);
     
-    const newUsed = userData.models[modelKey];
-    console.log('[IMG]', modelConfig.label, 'done for', username, '(usage:', newUsed + '/' + limit + ')');
+    console.log('[IMG]', modelConfig.label, 'done for', username, 
+      '(calls: ' + userData.calls + '/' + DAILY_FREE_CALLS + ')');
     
-    // 保存生成记录到数据库（7天后自动清理）
+    // 保存生成记录
     try {
       db.prepare(`INSERT INTO wan_generation_history (username, model, prompt, input_image, output_images) VALUES (?, ?, ?, ?, ?)`)
         .run(username, modelKey, prompt, image_url || '', JSON.stringify(finalImages));
@@ -2232,34 +2129,13 @@ app.post('/api/ai/wan/generate', requireAuth, async (req, res) => {
     
     res.json({
       images: finalImages,
-      models: buildModelsInfo(username, today, allUsage)
+      overview: buildModelsOverview(username)
     });
   } catch (e) {
     console.error('[IMG] Generate error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
-
-
-// 輔助函數：構建模型資訊
-function buildModelsInfo(username, today, allUsage) {
-  const userData = allUsage[username];
-  if (!userData || userData.date !== today) return null;
-  
-  const modelsInfo = {};
-  for (const [key, model] of Object.entries(IMAGE_MODELS)) {
-    const used = (userData.models && userData.models[key]) || 0;
-    const limit = getModelDailyLimit(key, username, today, allUsage);
-    modelsInfo[key] = {
-      label: model.label,
-      used: used,
-      limit: limit,
-      remaining: Math.max(0, limit - used),
-      priceCny: model.priceCny
-    };
-  }
-  return modelsInfo;
-}
 
 // 清理7天前的生成记录
 function cleanupWanHistory() {
@@ -2274,8 +2150,9 @@ function cleanupWanHistory() {
 }
 
 // GET /api/ai/wan/history - 获取生成历史
-app.get('/api/ai/wan/history', requireAuth, (req, res) => {
-  const username = req.authUser.username;
+app.get('/api/ai/wan/history', (req, res) => {
+  const username = req.headers['x-username'];
+  if (!username) return res.status(401).json({ error: '请先登录' });
   
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const offset = parseInt(req.query.offset) || 0;
@@ -2303,97 +2180,64 @@ app.get('/api/ai/wan/history', requireAuth, (req, res) => {
   }
 });
 
-// === Video API Proxy (Sora 2, Seedance, Kling, Minimax) ===
-const ZZ_VIDEO_API_KEY = process.env.ZHIZENGZENG_API_KEY || process.env.ZZ_API_KEY || ''; // key must be set in .env
-const ZZ_VIDEO_API_URL = process.env.APIYI_VIDEO_URL || "https://api2.aigcbest.top";
+// === Image Upload for i2v (Image-to-Video) ===
+const uploadForVideo = multer({
+  storage: multer.diskStorage({
+    destination: path.join(__dirname, 'public', 'uploads'),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, 'iv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('只接受图片文件'));
+    cb(null, true);
+  }
+});
 
-// Map aspect ratio to pixel size
-const ASPECT_TO_SIZE = {
-  '16:9': '1280x720',
-  '9:16': '720x1280',
-  '1:1': '1024x1024',
-  '4:3': '1024x768',
-  '3:4': '768x1024',
-  '21:9': '1792x768',
-  '3:2': '1536x1024',
-  '2:3': '1024x1536'
-};
-
-// Map frontend size names to pixel size
-const SIZE_NAME_MAP = {
-  '720p': '1280x720',
-  '1080p': '1920x1080',
-  '480p': '854x480'
-};
-
-// Validate seconds - only 4, 8, 12 supported
-function normalizeSeconds(seconds) {
-  const s = parseInt(seconds);
-  if (s <= 6) return '4';
-  if (s <= 10) return '8';
-  return '12';
-}
-
-app.post('/api/video/generate', requireAuth, async (req, res) => {
+app.post('/api/upload-image', uploadForVideo.single('image'), (req, res) => {
   try {
-    // Accept both frontend (duration, ratio) and backend (seconds, size) param names
-    const { model, prompt, seconds, size, duration, ratio, resolution, image_url } = req.body;
+    if (!req.file) return res.status(400).json({ error: '未上传文件' });
+    const url = 'https://lizisucaiwang.online/uploads/' + req.file.filename;
+    res.json({ success: true, url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// === Sora 2 Video API Proxy ===
+const APIYI_VIDEO_KEY = process.env.APIYI_VIDEO_KEY;
+const APIYI_VIDEO_URL = process.env.APIYI_VIDEO_URL || "https://api.zhizengzeng.com";
+
+app.post('/api/video/generate', async (req, res) => {
+  try {
+    const { model, prompt, seconds, size, image_url } = req.body;
     if (!model || !prompt) return res.status(400).json({ error: '缺少必要参数' });
     
-    // Normalize parameters
-    const actualSeconds = normalizeSeconds(seconds || duration || 5);
-    
-    // Convert aspect ratio or size name to pixel dimensions
-    let actualSize = '1280x720'; // default
-    const ratioOrSize = size || ratio || '16:9';
-    if (ASPECT_TO_SIZE[ratioOrSize]) {
-      actualSize = ASPECT_TO_SIZE[ratioOrSize];
-    } else if (SIZE_NAME_MAP[ratioOrSize]) {
-      actualSize = SIZE_NAME_MAP[ratioOrSize];
-    } else if (ratioOrSize.includes('x')) {
-      actualSize = ratioOrSize; // Already in pixel format
-    }
-    
-    // Build request body
-    const requestBody = { 
-      model, 
-      prompt, 
-      seconds: actualSeconds, 
-      size: actualSize 
-    };
+    // Build request body - include image_url for i2v (image-to-video)
+    const requestBody = { model, prompt, seconds: String(seconds), size };
     if (image_url) {
       requestBody.image_url = image_url;
     }
     
-    console.log('[VIDEO] Generate:', model, '- prompt:', prompt.substring(0, 50), '- seconds:', actualSeconds, '- size:', actualSize);
-    
-    const resp = await fetch(`${ZZ_VIDEO_API_URL}/v1/videos`, {
+    const resp = await fetch(`${APIYI_VIDEO_URL}/v1/videos`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Authorization': `Bearer ${ZZ_VIDEO_API_KEY}` 
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${APIYI_VIDEO_KEY}` },
       body: JSON.stringify(requestBody)
     });
     const data = await resp.json();
-    
-    if (!resp.ok) {
-      console.error('[VIDEO] API error:', JSON.stringify(data).substring(0, 500));
-      return res.status(resp.status).json({ error: data.error?.message || '提交失败' });
-    }
-    
-    console.log('[VIDEO] Task submitted:', data.id);
+    if (!resp.ok) return res.status(resp.status).json({ error: data.error?.message || '提交失败' });
     res.json(data);
   } catch (e) {
-    console.error('[VIDEO] Generate error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/api/video/status/:id', requireAuth, async (req, res) => {
+app.get('/api/video/status/:id', async (req, res) => {
   try {
-    const resp = await fetch(`${ZZ_VIDEO_API_URL}/v1/videos/${req.params.id}`, {
-      headers: { 'Authorization': `Bearer ${ZZ_VIDEO_API_KEY}` }
+    const resp = await fetch(`${APIYI_VIDEO_URL}/v1/videos/${req.params.id}`, {
+      headers: { 'Authorization': `Bearer ${APIYI_VIDEO_KEY}` }
     });
     const data = await resp.json();
     if (!resp.ok) return res.status(resp.status).json({ error: data.error?.message || '查询失败' });
@@ -2403,10 +2247,10 @@ app.get('/api/video/status/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/video/download/:id', requireAuth, async (req, res) => {
+app.get('/api/video/download/:id', async (req, res) => {
   try {
-    const resp = await fetch(`${ZZ_VIDEO_API_URL}/v1/videos/${req.params.id}/content`, {
-      headers: { 'Authorization': `Bearer ${ZZ_VIDEO_API_KEY}` }
+    const resp = await fetch(`${APIYI_VIDEO_URL}/v1/videos/${req.params.id}/content`, {
+      headers: { 'Authorization': `Bearer ${APIYI_VIDEO_KEY}` }
     });
     if (!resp.ok) return res.status(resp.status).json({ error: '下载失败' });
     res.setHeader('Content-Type', 'video/mp4');
@@ -2419,234 +2263,46 @@ app.get('/api/video/download/:id', requireAuth, async (req, res) => {
 });
 
 
-// === MiniMax Voice Clone ===
-const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
-const MINIMAX_BASE_URL = 'https://api.minimax.io/v1';
-
-// Upload voice sample and clone
-app.post('/api/voice/clone', requireAuth, upload.single('audio'), async (req, res) => {
+// PUT /api/settings/zhizengzeng-key - Update zhizengzeng API key
+app.put("/api/settings/zhizengzeng-key", (req, res) => {
+  const { adminUsername, newKey } = req.body;
+  if (!adminUsername || !newKey) return res.json({ ok: false, error: "缺少参数" });
+  const admin = db.prepare("SELECT * FROM users WHERE username = ? AND role = ?").get(adminUsername, "admin");
+  if (!admin) return res.json({ ok: false, error: "权限不足" });
+  if (!newKey.startsWith("sk-")) return res.json({ ok: false, error: "Key 格式错误（需以 sk- 开头）" });
   try {
-    const username = req.authUser.username;
-    const user = req.authUser;
-
-    if (!MINIMAX_API_KEY) return res.json({ ok: false, error: '语音服务未配置' });
-    if (!req.file) return res.json({ ok: false, error: '请上传音频文件' });
-
-    const ext = path.extname(req.file.originalname).toLowerCase();
-    if (!['.mp3', '.m4a', '.wav'].includes(ext)) {
-      return res.json({ ok: false, error: '仅支持 mp3, m4a, wav 格式' });
+    const envPath = require("path").join(__dirname, ".env");
+    let envContent = require("fs").readFileSync(envPath, "utf-8");
+    if (envContent.includes("ZHIZENGENG_API_KEY=")) {
+      envContent = envContent.replace(/ZHIZENGENG_API_KEY=.*/, "ZHIZENGENG_API_KEY=" + newKey);
+    } else {
+      envContent += "\nZHIZENGZENG_API_KEY=" + newKey;
     }
-
-    // Check file size (max 20MB)
-    if (req.file.size > 20 * 1024 * 1024) {
-      return res.json({ ok: false, error: '文件大小不能超过 20MB' });
-    }
-
-    // Step 1: Upload file to MiniMax
-    const formData = new FormData();
-    formData.append('purpose', 'voice_clone');
-    formData.append('file', new Blob([req.file.buffer], { type: req.file.mimetype }), req.file.originalname);
-
-    const uploadResp = await fetch(MINIMAX_BASE_URL + '/files/upload', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + MINIMAX_API_KEY },
-      body: formData
-    });
-    const uploadData = await uploadResp.json();
-
-    if (uploadData.base_resp?.status_code !== 0) {
-      console.error('[Voice Clone] Upload failed:', uploadData);
-      return res.json({ ok: false, error: '音频上传失败: ' + (uploadData.base_resp?.status_msg || '未知错误') });
-    }
-
-    const fileId = uploadData.file.file_id;
-    console.log('[Voice Clone] File uploaded, file_id:', fileId);
-
-    // Step 2: Clone voice
-    const voiceId = 'lizi_v_' + user.id + '_' + Date.now();
-    const cloneBody = {
-      file_id: fileId,
-      voice_id: voiceId,
-      language_boost: 'Chinese'
-    };
-
-    const cloneResp = await fetch(MINIMAX_BASE_URL + '/voice_clone', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + MINIMAX_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(cloneBody)
-    });
-    const cloneData = await cloneResp.json();
-
-    if (cloneData.base_resp?.status_code !== 0) {
-      console.error('[Voice Clone] Clone failed:', cloneData);
-      return res.json({ ok: false, error: '声音克隆失败: ' + (cloneData.base_resp?.status_msg || '未知错误') });
-    }
-
-    // Step 3: Save to DB (delete any existing clone first)
-    db.prepare('DELETE FROM voice_clones WHERE username = ?').run(username);
-    db.prepare(
-      'INSERT INTO voice_clones (user_id, username, voice_id, demo_url, status) VALUES (?, ?, ?, ?, ?)'
-    ).run(user.id, username, voiceId, cloneData.demo_audio || '', 'ready');
-
-    await syncDB();
-    console.log('[Voice Clone] Success for', username, '- voice_id:', voiceId);
-
-    res.json({
-      ok: true,
-      voice: {
-        voice_id: voiceId,
-        demo_url: cloneData.demo_audio || ''
-      }
-    });
-  } catch (e) {
-    console.error('[Voice Clone] Error:', e.message);
-    res.json({ ok: false, error: '克隆失败: ' + e.message });
-  }
-});
-
-// Get voice clone status
-app.get('/api/voice/status', requireAuth, (req, res) => {
-  const username = req.authUser.username;
-
-  const clone = db.prepare('SELECT * FROM voice_clones WHERE username = ?').get(username);
-  if (!clone) {
-    return res.json({ ok: false, cloned: false });
-  }
-
-  res.json({
-    ok: true,
-    cloned: true,
-    voice: {
-      voice_id: clone.voice_id,
-      demo_url: clone.demo_url,
-      status: clone.status,
-      created_at: clone.created_at
-    }
-  });
-});
-
-// TTS with cloned voice
-app.post('/api/voice/tts', requireAuth, async (req, res) => {
-  try {
-    const username = req.authUser.username;
-    const { text, model, speed } = req.body;
-    if (!text || !text.trim()) return res.json({ ok: false, error: '请输入文本' });
-
-    const clone = db.prepare('SELECT * FROM voice_clones WHERE username = ?').get(username);
-    if (!clone || clone.status !== 'ready') {
-      return res.json({ ok: false, error: '请先克隆声音' });
-    }
-
-    const ttsResp = await fetch(MINIMAX_BASE_URL + '/t2a_v2', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + MINIMAX_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: model || 'speech-2.8-hd',
-        text: text.trim().slice(0, 5000),
-        stream: false,
-        voice_setting: {
-          voice_id: clone.voice_id,
-          speed: speed || 1.0,
-          vol: 1,
-          pitch: 0
-        },
-        audio_setting: {
-          sample_rate: 32000,
-          bitrate: 128000,
-          format: 'mp3',
-          channel: 1
-        },
-        language_boost: 'auto',
-        output_format: 'url'
-      })
-    });
-
-    const ttsData = await ttsResp.json();
-
-    if (ttsData.base_resp?.status_code !== 0) {
-      console.error('[Voice TTS] Error:', ttsData);
-      return res.json({ ok: false, error: '语音生成失败: ' + (ttsData.base_resp?.status_msg || '未知错误') });
-    }
-
-    // output_format=url returns a URL in data.audio
-    const audioUrl = ttsData.data?.audio || '';
-    const extraInfo = ttsData.extra_info || {};
-
-    res.json({
-      ok: true,
-      audio_url: audioUrl,
-      duration_ms: extraInfo.audio_length || 0,
-      chars: extraInfo.usage_characters || 0
-    });
-  } catch (e) {
-    console.error('[Voice TTS] Error:', e.message);
-    res.json({ ok: false, error: '生成失败: ' + e.message });
-  }
-});
-
-// Delete voice clone
-app.delete('/api/voice/clone', requireAuth, async (req, res) => {
-  try {
-    const username = req.authUser.username;
-
-    const clone = db.prepare('SELECT * FROM voice_clones WHERE username = ?').get(username);
-    if (!clone) return res.json({ ok: false, error: '未找到克隆声音' });
-
-    // Delete from MiniMax
-    if (MINIMAX_API_KEY) {
-      try {
-        await fetch(MINIMAX_BASE_URL + '/voice/delete', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + MINIMAX_API_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ voice_id: clone.voice_id })
-        });
-      } catch (e) {
-        console.error('[Voice Clone] MiniMax delete error:', e.message);
-      }
-    }
-
-    db.prepare('DELETE FROM voice_clones WHERE username = ?').run(username);
-    await syncDB();
-
+    require("fs").writeFileSync(envPath, envContent, "utf-8");
+    ZHIZENGENG_API_KEY = newKey;
+    process.env.ZHIZENGENG_API_KEY = newKey;
+    console.log("[SETTINGS] ZHIZENGENG_API_KEY updated by", adminUsername);
     res.json({ ok: true });
   } catch (e) {
-    console.error('[Voice Delete] Error:', e.message);
-    res.json({ ok: false, error: '删除失败: ' + e.message });
+    res.json({ ok: false, error: e.message });
   }
-});
-
-// Map /voice/ to voice.html
-app.get("/voice/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "voice.html"));
 });
 
 // === SPA Catch-all: serve index.html for any unmatched GET routes ===
 // This fixes "NOT FOUND" when users bookmark or directly visit sub-page URLs on mobile/desktop
-app.get('*', (req, res, next) => {
+app.get('/{*splat}', (req, res, next) => {
   // Skip API routes and static files
-  if (req.path.startsWith('/api/') || req.path.startsWith('/assets/')) return next();
+  if (req.path.startsWith('/api/') || req.path.startsWith('/assets/') || req.path.startsWith('/css/') || req.path.startsWith('/js/') || /\.(css|js|png|jpg|gif|ico|svg|woff2?)$/.test(req.path)) return next();
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 async function main() {
-  await initR2();
-  await setupDBSync();
   
+  await setupDBSync();
   // Initialize AI system
   initAITables(db);
-  app.locals.db = db; // Make db accessible to AI system
-  app.locals.uploadToR2 = uploadToR2; // Make R2 upload accessible to AI video system
-  // === Chat Proxy to voice-app ===
-  app.all('/api/ai/proxy/apiyi/*', async (req, res) => {
+  app.locals.db = db; // Make db accessible to AI system  // === Chat Proxy to voice-app ===
+  app.all('/api/ai/proxy/apiyi/{*path}', async (req, res) => {
     const http = require('http');
     const url = new URL(req.url, 'http://localhost');
     const targetPath = url.pathname.replace('/api/ai/proxy/apiyi', '/api');
@@ -2684,12 +2340,11 @@ async function main() {
 
   app.use('/api/ai', aiRouter);
 
-
   console.log('AI image generation system initialized');
   cleanupWanHistory();
   
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`栗子素材网 running on http://0.0.0.0:${PORT} | R2: ${USE_R2 ? 'enabled' : 'disabled'}`);
+    console.log(`栗子素材网 running on http://0.0.0.0:${PORT}`);
   });
 }
 main().catch(err => { console.error('Failed to start:', err); process.exit(1); });
