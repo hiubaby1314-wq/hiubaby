@@ -1,507 +1,705 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>图片多视角生成</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    :root {
-      --bg: #0c0c14; --surface: #16162a; --surface2: #1e1e36;
-      --border: #2a2a4a; --text: #e8e8f0; --text-muted: #8888aa;
-      --accent: #7c5cfc; --accent2: #5c9cfc; --danger: #fc5c7c;
-      --success: #4cda8a;
-    }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .app { max-width: 1200px; margin: 0 auto; padding: 20px; }
-    .header { text-align: center; padding: 20px 0 24px; }
-    .logo { font-size: 40px; margin-bottom: 8px; }
-    .header h1 { font-size: 24px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .desc { color: var(--text-muted); font-size: 13px; margin-top: 6px; }
-    .main { display: grid; grid-template-columns: 380px 1fr; gap: 20px; }
-    @media (max-width: 800px) { .main { grid-template-columns: 1fr; } }
-    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
-    .section { margin-bottom: 16px; }
-    .section-title { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .upload-area { position: relative; border: 2px dashed var(--border); border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.3s; min-height: 120px; display: flex; align-items: center; justify-content: center; }
-    .upload-area:hover { border-color: var(--accent); background: rgba(124,92,252,0.05); }
-    .upload-area.has-image { padding: 8px; border-style: solid; }
-    .upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-muted); }
-    .upload-icon { font-size: 28px; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--surface2); border-radius: 12px; font-weight: 300; }
-    .preview-img { max-width: 100%; max-height: 200px; border-radius: 8px; object-fit: contain; }
-    .remove-btn { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: #fff; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
-    textarea { width: 100%; min-height: 100px; padding: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 14px; font-family: inherit; resize: vertical; transition: border-color 0.2s; }
-    textarea:focus { outline: none; border-color: var(--accent); }
-    .options-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-    .option-group { display: flex; flex-direction: column; }
-    .option-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-    select { width: 100%; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
-    select:focus { outline: none; border-color: var(--accent); }
-    .price-info { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; padding: 8px 12px; background: var(--surface2); border-radius: 8px; text-align: center; }
-    .usage-info { font-size: 13px; color: var(--accent2); margin-bottom: 12px; padding: 10px 12px; background: rgba(92,156,252,0.1); border: 1px solid rgba(92,156,252,0.2); border-radius: 8px; text-align: center; font-weight: 500; }
-    .usage-info.warning { color: var(--danger); background: rgba(252,92,124,0.1); border-color: rgba(252,92,124,0.2); }
-    .generate-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; position: relative; overflow: hidden; }
-    .generate-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,92,252,0.3); }
-    .generate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .status-bar { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; display: none; }
-    .status-bar.info { display: block; background: rgba(92,156,252,0.1); color: var(--accent2); border: 1px solid rgba(92,156,252,0.2); }
-    .status-bar.success { display: block; background: rgba(76,218,138,0.1); color: var(--success); border: 1px solid rgba(76,218,138,0.2); }
-    .status-bar.error { display: block; background: rgba(252,92,124,0.1); color: var(--danger); border: 1px solid rgba(252,92,124,0.2); }
-    .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .results-header h3 { font-size: 16px; font-weight: 600; }
-    .download-all-btn { padding: 6px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px; cursor: pointer; transition: all 0.2s; }
-    .download-all-btn:hover { background: var(--accent); border-color: var(--accent); }
-    .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; min-height: 200px; }
-    .empty-state { grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text-muted); text-align: center; }
-    .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
-    .result-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: all 0.3s; animation: fadeIn 0.5s ease; }
-    .result-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
-    .result-card img { width: 100%; display: block; cursor: pointer; }
-    .result-card .card-actions { padding: 8px; display: flex; gap: 6px; }
-    .result-card .card-actions button { flex: 1; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 11px; cursor: pointer; transition: all 0.2s; }
-    .result-card .card-actions button:hover { background: var(--accent); border-color: var(--accent); }
-    .loading-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; min-height: 200px; }
-    .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    .progress-bar { width: 100%; height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 12px; overflow: hidden; }
-    .model-select { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; cursor: pointer; margin-bottom: 8px; }
-    .model-select:focus { outline: none; border-color: var(--accent); }
-    .model-info { font-size: 12px; color: var(--text-muted); padding: 6px 10px; background: var(--surface2); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
-    .model-info .price { color: var(--success); font-weight: 500; }
-    .progress-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width 0.3s; animation: progress 2s ease-in-out infinite; }
-    @keyframes progress { 0% { width: 10%; } 50% { width: 80%; } 100% { width: 10%; } }
-    .quick-angles { margin-bottom: 16px; }
-    .quick-angles-title { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; letter-spacing: 0.5px; }
-    .quick-angles-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-    .angle-btn { padding: 7px 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 11px; cursor: pointer; transition: all 0.2s; text-align: center; white-space: nowrap; }
-    .angle-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; transform: translateY(-1px); }
-    .angle-btn:active { transform: scale(0.96); }
-    .four-view-btn { width: 100%; margin-top: 8px; padding: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-    .four-view-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(124,92,252,0.3); }
-    .four-view-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .angle-btn .angle-icon { display: block; font-size: 16px; margin-bottom: 2px; }
-    .history-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border); }
-    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .history-header h3 { font-size: 16px; font-weight: 600; color: var(--text-muted); }
-    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-    .history-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; cursor: pointer; transition: all 0.2s; }
-    .history-card:hover { border-color: var(--accent); transform: translateY(-2px); }
-    .history-card img { width: 100%; aspect-ratio: 1; object-fit: cover; }
-    .history-card-info { padding: 8px 10px; }
-    .history-card-prompt { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .history-card-time { font-size: 10px; color: var(--text-muted); opacity: 0.7; margin-top: 2px; }
-    .history-empty { text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多视角角色生成器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #070c18;
+    --card: #0d1425;
+    --card2: #111c32;
+    --border: #1d2d4a;
+    --border2: #243654;
+    --blue: #3b82f6;
+    --cyan: #22d3ee;
+    --cyan-dim: #164e63;
+    --text: #e2e8f0;
+    --text-dim: #64748b;
+    --text-mid: #94a3b8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --radius: 12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans SC', system-ui, sans-serif;
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--card); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* ---- Layout ---- */
+  .app { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+
+  .header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-icon {
+    width: 40px; height: 40px;
+    background: linear-gradient(135deg, #1d4ed8, #06b6d4);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .header h1 { font-size: 1.2rem; font-weight: 700; color: #f1f5f9; }
+  .header p { font-size: 0.75rem; color: var(--text-mid); margin-top: 2px; }
+
+  .quota-badge {
+    margin-left: auto;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    color: var(--text-mid);
+    white-space: nowrap;
+  }
+  .quota-badge span { color: var(--cyan); font-weight: 700; }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 640px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---- Cards ---- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-mid);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ---- Image Upload ---- */
+  .upload-zone {
+    border: 2px dashed var(--border2);
+    border-radius: 10px;
+    height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    background: var(--card2);
+  }
+  .upload-zone:hover { border-color: var(--blue); background: #0f172a; }
+  .upload-zone.dragging { border-color: var(--cyan); background: #0c1a2e; }
+  .upload-zone.has-image { border-style: solid; border-color: var(--border); cursor: default; }
+
+  .upload-zone img.preview {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  .upload-zone .upload-hint {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    color: var(--text-dim); pointer-events: none;
+  }
+  .upload-zone .upload-hint svg { width: 36px; height: 36px; opacity: 0.5; }
+  .upload-zone .upload-hint p { font-size: 0.8rem; }
+  .upload-zone .upload-hint small { font-size: 0.7rem; }
+
+  .clear-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: rgba(239,68,68,0.8);
+    border: none; border-radius: 6px;
+    color: white; width: 26px; height: 26px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.2s; z-index: 2;
+  }
+  .upload-zone:hover .clear-btn { opacity: 1; }
+
+  /* ---- Radar Selector ---- */
+  .radar-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .radar-svg { width: 200px; height: 200px; cursor: pointer; }
+
+  .radar-node { cursor: pointer; transition: all 0.15s; }
+  .radar-node circle.bg {
+    fill: #0f1628; stroke: var(--border2); stroke-width: 1.5;
+    transition: all 0.15s;
+  }
+  .radar-node.active circle.bg { fill: #1d4ed8; stroke: var(--cyan); stroke-width: 2; }
+  .radar-node circle.bg:hover { stroke: var(--blue); }
+  .radar-node .label { font-size: 6px; fill: var(--text-dim); text-anchor: middle; font-family: 'Noto Sans SC', sans-serif; }
+  .radar-node.active .label { fill: #bfdbfe; }
+
+  .angle-chips {
+    display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+  }
+  .angle-chip {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.68rem;
+    color: var(--text-mid);
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .angle-chip.active {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+    color: #bfdbfe;
+  }
+  .angle-chip:hover { border-color: var(--blue); }
+
+  /* Also add top/bottom chips */
+  .extra-chips { margin-top: 4px; }
+
+  /* ---- Inputs ---- */
+  .form-label {
+    font-size: 0.75rem;
+    color: var(--text-mid);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .form-input {
+    width: 100%;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: 'Noto Sans SC', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+    resize: none;
+  }
+  .form-input:focus { border-color: var(--blue); }
+  .form-input::placeholder { color: var(--text-dim); }
+
+  /* ---- Generate Button ---- */
+  .gen-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #1d4ed8, #0891b2);
+    border: none; border-radius: 10px;
+    color: white; font-size: 0.95rem; font-weight: 700;
+    font-family: 'Noto Sans SC', sans-serif;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin-top: 14px;
+  }
+  .gen-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .gen-btn:active { transform: translateY(0); }
+  .gen-btn:disabled { background: #1e293b; color: var(--text-dim); cursor: not-allowed; transform: none; }
+
+  /* ---- Result ---- */
+  .result-area { margin-top: 16px; }
+  .result-img-wrap {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    min-height: 120px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .result-img-wrap img { width: 100%; display: block; border-radius: 10px; }
+  .result-placeholder {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    color: var(--text-dim); padding: 40px 20px;
+  }
+  .result-placeholder svg { opacity: 0.3; }
+
+  .dl-btn {
+    margin-top: 10px;
+    width: 100%;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--cyan);
+    font-size: 0.82rem; font-weight: 600;
+    font-family: 'Noto Sans SC', sans-serif;
+    padding: 9px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .dl-btn:hover { background: var(--card); border-color: var(--cyan); }
+
+  /* ---- Error ---- */
+  .error-box {
+    background: #1c0a0a; border: 1px solid #7f1d1d;
+    border-radius: 8px; padding: 10px 12px;
+    color: #fca5a5; font-size: 0.78rem;
+    margin-top: 10px;
+    display: none;
+  }
+
+  /* ---- Loading spinner ---- */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  /* ---- Loading progress dots ---- */
+  @keyframes blink { 0%,100%{opacity:0.2} 50%{opacity:1} }
+  .dots span { animation: blink 1.4s infinite both; font-size: 1.2rem; }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  .loading-overlay {
+    display: none;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    min-height: 120px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 20px;
+  }
+  .loading-overlay.show { display: flex; }
+
+  .model-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #0c1f0c; border: 1px solid #166534;
+    border-radius: 20px; padding: 3px 10px;
+    font-size: 0.68rem; color: #86efac;
+    margin-top: 8px;
+  }
+</style>
 </head>
 <body>
-  <div class="app">
-    <div class="header">
-      <div class="logo">📷</div>
-      <h1>图片多视角生成</h1>
-      <p class="desc">基于万相大模型，从一张图片生成多个不同视角的图片</p>
+
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
     </div>
-    <div class="main">
-      <div class="panel left-panel">
-        <div class="section">
-          <label class="section-title">参考图片（必填）</label>
-          <div class="upload-area" id="uploadArea">
-            <input type="file" id="imageInput" accept="image/*" hidden>
-            <div class="upload-placeholder" id="uploadPlaceholder">
-              <span class="upload-icon">+</span>
-              <span>点击上传参考图片</span>
-            </div>
-            <img id="previewImg" class="preview-img" style="display:none">
-            <button class="remove-btn" id="removeBtn" style="display:none" onclick="event.stopPropagation();removeImage()">✕</button>
+    <div>
+      <h1>多视角角色生成器</h1>
+      <p>上传角色图片，AI 自动生成多角度角色设定图</p>
+    </div>
+    <div class="quota-badge">今日剩余 <span id="quotaNum">10</span> 次</div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+    <!-- Left: Controls -->
+    <div>
+      <!-- Image Upload -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          上传参考图片
+        </div>
+        <div class="upload-zone" id="uploadZone" onclick="triggerUpload()">
+          <div class="upload-hint" id="uploadHint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p>点击或拖拽图片至此</p>
+            <small>支持 JPG、PNG 格式</small>
           </div>
+          <img class="preview" id="previewImg" style="display:none" alt="预览">
+          <button class="clear-btn" id="clearBtn" style="display:none" onclick="clearImage(event)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
-        <div class="section">
-          <label class="section-title">提示词 *</label>
-          <textarea id="promptInput" placeholder="描述视角变化指令...&#10;&#10;例如：将图片转换为左侧面视角，保持角色特征和风格一致"></textarea>
+        <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFile(this.files[0])">
+      </div>
+
+      <!-- Angle Selector -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="16" y2="14"/></svg>
+          选择视角
         </div>
-        <div class="quick-angles">
-          <div class="quick-angles-title">快捷视角</div>
-          <div class="quick-angles-grid">
-            <button class="angle-btn" onclick="fillAngle('将图片转换为正面视角，保持角色特征和风格一致')"><span class="angle-icon">🧑</span>正面</button>
-            <button class="angle-btn" onclick="fillAngle('将图片转换为3/4侧面视角，保持角色特征和风格一致')"><span class="angle-icon">↗️</span>3/4侧面</button>
-            <button class="angle-btn" onclick="fillAngle('将图片转换为左侧面视角，保持角色特征和风格一致')"><span class="angle-icon">👈</span>左侧面</button>
-            <button class="angle-btn" onclick="fillAngle('将图片转换为右侧面视角，保持角色特征和风格一致')"><span class="angle-icon">👉</span>右侧面</button>
-            <button class="angle-btn" onclick="fillAngle('将图片转换为背面视角，保持角色特征和风格一致')"><span class="angle-icon">🔙</span>背面</button>
-            <button class="angle-btn" onclick="fillAngle('将图片转换为俯视视角，保持角色特征和风格一致')"><span class="angle-icon">⬇️</span>俯视</button>
-            <button class="angle-btn" onclick="fillAngle('将图片转换为仰视视角，保持角色特征和风格一致')"><span class="angle-icon">⬆️</span>仰视</button>
+        <div class="radar-wrap">
+          <svg class="radar-svg" viewBox="0 0 200 200" id="radarSvg">
+            <!-- Background circles -->
+            <circle cx="100" cy="100" r="88" fill="none" stroke="#1d2d4a" stroke-width="1" stroke-dasharray="4 3"/>
+            <circle cx="100" cy="100" r="60" fill="none" stroke="#1d2d4a" stroke-width="0.5"/>
+            <circle cx="100" cy="100" r="32" fill="none" stroke="#1d2d4a" stroke-width="0.5"/>
+            <!-- Crosshairs -->
+            <line x1="100" y1="12" x2="100" y2="188" stroke="#1d2d4a" stroke-width="0.5"/>
+            <line x1="12" y1="100" x2="188" y2="100" stroke="#1d2d4a" stroke-width="0.5"/>
+            <line x1="34" y1="34" x2="166" y2="166" stroke="#1d2d4a" stroke-width="0.5"/>
+            <line x1="166" y1="34" x2="34" y2="166" stroke="#1d2d4a" stroke-width="0.5"/>
+            <!-- Center character icon -->
+            <circle cx="100" cy="100" r="14" fill="#0d1425" stroke="#1d2d4a" stroke-width="1.5"/>
+            <circle cx="100" cy="96" r="4" fill="#3b82f6"/>
+            <path d="M92 108 Q100 104 108 108" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            <!-- Nodes: front(S), front-right(SE), right(E), back-right(NE), back(N), back-left(NW), left(W), front-left(SW) -->
+            <!-- front: bottom -->
+            <g class="radar-node active" data-angle="front" onclick="toggleAngle('front')">
+              <circle class="bg" cx="100" cy="180" r="14"/>
+              <text class="label" x="100" y="183">正面</text>
+            </g>
+            <!-- front-right: bottom-right -->
+            <g class="radar-node active" data-angle="front-right" onclick="toggleAngle('front-right')">
+              <circle class="bg" cx="162" cy="162" r="14"/>
+              <text class="label" x="162" y="161">右前</text>
+              <text class="label" x="162" y="169">3/4</text>
+            </g>
+            <!-- right: right -->
+            <g class="radar-node active" data-angle="right" onclick="toggleAngle('right')">
+              <circle class="bg" cx="180" cy="100" r="14"/>
+              <text class="label" x="180" y="103">右侧</text>
+            </g>
+            <!-- back-right: top-right -->
+            <g class="radar-node" data-angle="back-right" onclick="toggleAngle('back-right')">
+              <circle class="bg" cx="162" cy="38" r="14"/>
+              <text class="label" x="162" y="37">右后</text>
+              <text class="label" x="162" y="45">3/4</text>
+            </g>
+            <!-- back: top -->
+            <g class="radar-node active" data-angle="back" onclick="toggleAngle('back')">
+              <circle class="bg" cx="100" cy="20" r="14"/>
+              <text class="label" x="100" y="23">背面</text>
+            </g>
+            <!-- back-left: top-left -->
+            <g class="radar-node" data-angle="back-left" onclick="toggleAngle('back-left')">
+              <circle class="bg" cx="38" cy="38" r="14"/>
+              <text class="label" x="38" y="37">左后</text>
+              <text class="label" x="38" y="45">3/4</text>
+            </g>
+            <!-- left: left -->
+            <g class="radar-node" data-angle="left" onclick="toggleAngle('left')">
+              <circle class="bg" cx="20" cy="100" r="14"/>
+              <text class="label" x="20" y="103">左侧</text>
+            </g>
+            <!-- front-left: bottom-left -->
+            <g class="radar-node" data-angle="front-left" onclick="toggleAngle('front-left')">
+              <circle class="bg" cx="38" cy="162" r="14"/>
+              <text class="label" x="38" y="161">左前</text>
+              <text class="label" x="38" y="169">3/4</text>
+            </g>
+          </svg>
+          <!-- Extra angles: top/bottom -->
+          <div class="extra-chips" style="display:flex;gap:6px;justify-content:center">
+            <div class="angle-chip" data-angle="top" onclick="toggleChip(this)">俯视</div>
+            <div class="angle-chip" data-angle="bottom" onclick="toggleChip(this)">仰视</div>
           </div>
+          <div style="font-size:0.7rem;color:var(--text-dim);text-align:center">已选 <span id="angleCount">4</span> 个视角（点击节点切换）</div>
         </div>
-        <button class="four-view-btn" id="fourViewBtn" onclick="startFourView()">🎯 一键生成四视图（正面 / 3/4侧面 / 侧面 / 背面）</button>
-        <div class="section">
-          <label class="section-title">选择模型</label>
-          <select id="modelSelect" class="model-select">
-          </select>
-          <div class="model-info" id="modelInfo"></div>
+      </div>
+
+      <!-- Prompts -->
+      <div class="card">
+        <div class="card-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          提示词（可选）
         </div>
-        <div class="usage-info" id="usageInfo">今日免费次数：加载中...</div>
-        <button class="generate-btn" id="generateBtn" onclick="startGenerate()">
-          <span id="btnText">开始生成</span>
-          <span id="btnLoading" style="display:none">生成中...</span>
+        <label class="form-label">背景描述</label>
+        <input type="text" class="form-input" id="bgPrompt" placeholder="例：赛博朋克城市夜景，留空则白色背景">
+        <label class="form-label" style="margin-top:10px">角色描述 / 额外要求</label>
+        <textarea class="form-input" id="customPrompt" rows="2" placeholder="例：年轻女法师，银白长发，蓝色法袍"></textarea>
+
+        <button class="gen-btn" id="genBtn" onclick="generate()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          生成多视角角色图
         </button>
-        <div class="status-bar" id="statusBar"></div>
-      </div>
-      <div class="panel right-panel">
-        <div class="results-header">
-          <h3>生成结果</h3>
-          <button class="download-all-btn" id="downloadAllBtn" style="display:none" onclick="downloadAll()">下载全部</button>
-        </div>
-        <div class="results-grid" id="resultsGrid">
-          <div class="empty-state">
-            <div class="empty-icon">🎨</div>
-            <p>上传图片并输入提示词后<br>点击"开始生成"</p>
-          </div>
-        </div>
+
+        <div class="error-box" id="errorBox"></div>
       </div>
     </div>
-    <div class="history-section">
-      <div class="history-header">
-        <h3>生成历史（保留7天）</h3>
-      </div>
-      <div class="history-grid" id="historyGrid">
-        <div class="history-empty">加载中...</div>
+
+    <!-- Right: Result -->
+    <div>
+      <div class="card">
+        <div class="card-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          生成结果
+        </div>
+
+        <!-- Loading -->
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="spinner"></div>
+          <div style="text-align:center">
+            <div style="font-size:0.85rem;color:var(--text-mid);font-weight:600">AI 正在生成多视角图</div>
+            <div style="font-size:0.75rem;color:var(--text-dim);margin-top:4px">图像生成约需 1-3 分钟，请耐心等待<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
+          </div>
+        </div>
+
+        <!-- Result image -->
+        <div class="result-img-wrap" id="resultWrap" style="display:flex">
+          <div class="result-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p style="font-size:0.8rem">生成结果将在这里显示</p>
+            <p style="font-size:0.7rem">上传图片后点击生成按钮</p>
+          </div>
+        </div>
+
+        <div id="modelInfo" style="display:none;margin-top:8px;text-align:center">
+          <span class="model-badge">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="modelName">-</span>
+          </span>
+        </div>
+
+        <button class="dl-btn" id="dlBtn" style="display:none" onclick="downloadResult()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          下载角色设定图
+        </button>
+
+        <!-- Instructions -->
+        <div style="margin-top:14px;padding:12px;background:var(--card2);border-radius:8px;border:1px solid var(--border)">
+          <div style="font-size:0.72rem;color:var(--text-dim);line-height:1.8">
+            <div style="color:var(--text-mid);font-weight:600;margin-bottom:6px">使用说明</div>
+            <div>① 上传包含角色的图片（JPG/PNG）</div>
+            <div>② 在雷达盘上点击节点选择所需视角</div>
+            <div>③ 可选填背景描述或角色补充说明</div>
+            <div>④ 点击「生成」，等待 1-3 分钟</div>
+            <div>⑤ 生成后可点击下载保存图片</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-  <script>
-    // Get username from URL
-    const params = new URLSearchParams(window.location.search);
-    const username = params.get('u') || '';
-    const authToken = params.get('t') || '';
+</div>
 
-    // State
-    let uploadedImageUrl = null;
-    let generatedImages = [];
-    let wanUsage = null;
-    let modelsData = null;
+<script>
+// ========== 配置 ==========
+const API_URL = 'https://runtime.codewords.ai/run/multi_view_character_generator_66fa689a/';
+const MAX_DAILY = 10;
+const QUOTA_KEY = 'char_gen_quota_v1';
 
-    // DOM elements
-    const uploadArea = document.getElementById('uploadArea');
-    const imageInput = document.getElementById('imageInput');
-    const uploadPlaceholder = document.getElementById('uploadPlaceholder');
-    const previewImg = document.getElementById('previewImg');
-    const removeBtn = document.getElementById('removeBtn');
-    const promptInput = document.getElementById('promptInput');
-    const usageInfo = document.getElementById('usageInfo');
-    const generateBtn = document.getElementById('generateBtn');
-    const btnText = document.getElementById('btnText');
-    const btnLoading = document.getElementById('btnLoading');
-    const statusBar = document.getElementById('statusBar');
-    const resultsGrid = document.getElementById('resultsGrid');
-    const downloadAllBtn = document.getElementById('downloadAllBtn');
+// ========== 状态 ==========
+let imageFile = null;
+let imageBase64 = null;
+let imageMime = 'image/png';
+let resultUrl = null;
 
-    // 载入模型列表和用量
-    async function loadModels() {
-      if (!username) {
-        usageInfo.textContent = '请先登录';
-        usageInfo.classList.add('warning');
-        return;
-      }
-      try {
-        // 载入模型列表
-        const modelsResp = await fetch('/api/ai/wan/models');
-        modelsData = await modelsResp.json();
-        
-        // 填充模型选择器（不显示次数）
-        const modelSelect = document.getElementById('modelSelect');
-        modelSelect.innerHTML = '';
-        for (const [key, model] of Object.entries(modelsData)) {
-          const option = document.createElement('option');
-          option.value = key;
-          option.textContent = model.label;
-          modelSelect.appendChild(option);
-        }
-        
-        // 载入用量
-        await checkUsage();
-        
-        // 綁定模型切換事件
-        modelSelect.addEventListener('change', () => {
-          updateModelInfo();
-          updateUsageDisplay();
-        });
-        updateModelInfo();
-        
-      } catch (err) {
-        usageInfo.textContent = '无法获取模型信息';
-        usageInfo.classList.add('warning');
-      }
-    }
-    
-    // 檢查用量
-    async function checkUsage() {
-      try {
-        const resp = await fetch('/api/ai/wan/usage', {
-          headers: authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : { 'X-Username': username }
-        });
-        const data = await resp.json();
-        wanUsage = data;
-        updateUsageDisplay();
-      } catch (err) {
-        usageInfo.textContent = '无法获取使用次数';
-        usageInfo.classList.add('warning');
-      }
-    }
-    
-    // 更新模型資訊顯示
-    function updateModelInfo() {
-      const modelKey = document.getElementById('modelSelect').value;
-      if (!wanUsage || !wanUsage.models || !wanUsage.models[modelKey]) return;
-      
-      const modelInfo = wanUsage.models[modelKey];
-      const infoDiv = document.getElementById('modelInfo');
-      infoDiv.innerHTML = `剩余 <strong>${modelInfo.remaining}/${modelInfo.limit}</strong> 次`;
-    }
+// 默认激活的视角
+const activeAngles = new Set(['front', 'front-right', 'right', 'back']);
 
-    function updateUsageDisplay() {
-      const modelKey = document.getElementById('modelSelect').value;
-      if (!wanUsage || !wanUsage.models || !wanUsage.models[modelKey]) {
-        usageInfo.textContent = '无法获取使用次数';
-        usageInfo.classList.add('warning');
-        return;
-      }
-      
-      const modelInfo = wanUsage.models[modelKey];
-      if (modelInfo.remaining <= 0) {
-        usageInfo.textContent = `${modelInfo.label} 今日已用完（${modelInfo.used}/${modelInfo.limit}）`;
-        usageInfo.classList.add('warning');
-        generateBtn.disabled = true;
-      } else {
-        usageInfo.textContent = `${modelInfo.label}：剩余 ${modelInfo.remaining}/${modelInfo.limit} 次`;
-        usageInfo.classList.remove('warning');
-        generateBtn.disabled = false;
-      }
-      updateModelInfo();
-    }
+// ========== 配额管理 ==========
+function getQuota() {
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    const d = JSON.parse(localStorage.getItem(QUOTA_KEY) || '{}');
+    if (d.date === today) return d.balance;
+  } catch(e) {}
+  localStorage.setItem(QUOTA_KEY, JSON.stringify({ date: today, balance: MAX_DAILY }));
+  return MAX_DAILY;
+}
+function deductQuota() {
+  const today = new Date().toISOString().split('T')[0];
+  const bal = Math.max(0, getQuota() - 1);
+  localStorage.setItem(QUOTA_KEY, JSON.stringify({ date: today, balance: bal }));
+  return bal;
+}
+function updateQuotaUI() {
+  document.getElementById('quotaNum').textContent = getQuota();
+}
 
-    loadModels();
+// ========== 图片上传 ==========
+function triggerUpload() {
+  if (imageFile) return;
+  document.getElementById('fileInput').click();
+}
+function clearImage(e) {
+  e.stopPropagation();
+  imageFile = null; imageBase64 = null;
+  document.getElementById('previewImg').style.display = 'none';
+  document.getElementById('uploadHint').style.display = 'flex';
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('uploadZone').classList.remove('has-image');
+}
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showError('请上传图片文件 (JPEG, PNG)');
+    return;
+  }
+  imageFile = file;
+  imageMime = file.type;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target.result;
+    imageBase64 = dataUrl.split(',')[1];
+    document.getElementById('previewImg').src = dataUrl;
+    document.getElementById('previewImg').style.display = 'block';
+    document.getElementById('uploadHint').style.display = 'none';
+    document.getElementById('clearBtn').style.display = 'flex';
+    document.getElementById('uploadZone').classList.add('has-image');
+    hideError();
+  };
+  reader.readAsDataURL(file);
+}
 
-    // Upload area click
-    uploadArea.addEventListener('click', () => {
-      if (!uploadedImageUrl) imageInput.click();
+// Drag and drop
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', (e) => { e.preventDefault(); if(!imageFile) zone.classList.add('dragging'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragging'));
+zone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  zone.classList.remove('dragging');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+// ========== 视角选择 ==========
+function toggleAngle(id) {
+  if (activeAngles.has(id)) {
+    if (activeAngles.size <= 1) return; // 至少保留一个
+    activeAngles.delete(id);
+  } else {
+    activeAngles.add(id);
+  }
+  // Update radar node
+  const node = document.querySelector(`[data-angle="${id}"]`);
+  if (node) node.classList.toggle('active', activeAngles.has(id));
+  updateAngleCount();
+}
+function toggleChip(el) {
+  const id = el.dataset.angle;
+  el.classList.toggle('active');
+  if (activeAngles.has(id)) activeAngles.delete(id);
+  else activeAngles.add(id);
+  updateAngleCount();
+}
+function updateAngleCount() {
+  document.getElementById('angleCount').textContent = activeAngles.size;
+}
+
+// ========== 生成 ==========
+async function generate() {
+  hideError();
+  if (!imageBase64) { showError('请先上传角色图片'); return; }
+  if (activeAngles.size === 0) { showError('请至少选择一个视角'); return; }
+  if (getQuota() <= 0) { showError('今日次数已用完，请明日再来'); return; }
+
+  // UI state
+  setLoading(true);
+
+  try {
+    const resp = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_data: imageBase64,
+        mime_type: imageMime,
+        selected_angles: Array.from(activeAngles),
+        background_prompt: document.getElementById('bgPrompt').value,
+        custom_prompt: document.getElementById('customPrompt').value,
+      }),
     });
 
-    imageInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 10 * 1024 * 1024) { showStatus('图片大小不能超过10MB', 'error'); return; }
-
-      // Show preview locally
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        previewImg.src = ev.target.result;
-        previewImg.style.display = 'block';
-        uploadPlaceholder.style.display = 'none';
-        removeBtn.style.display = 'flex';
-        uploadArea.classList.add('has-image');
-      };
-      reader.readAsDataURL(file);
-
-      // Upload to server for hosting
-      try {
-        showStatus('正在上传参考图片...', 'info');
-        const formData = new FormData();
-        formData.append('image', file);
-        const resp = await fetch('/api/ai/host-image', {
-          method: 'POST',
-          headers: authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : {},
-          body: formData
-        });
-        const data = await resp.json();
-        if (data.url) {
-          uploadedImageUrl = data.url;
-          showStatus('参考图片已上传', 'success');
-        } else {
-          showStatus('图片上传失败: ' + (data.error || '未知错误'), 'error');
-          removeImage();
-        }
-      } catch (err) {
-        showStatus('图片上传失败: ' + err.message, 'error');
-        removeImage();
-      }
-    });
-
-    function removeImage() {
-      uploadedImageUrl = null;
-      previewImg.style.display = 'none';
-      previewImg.src = '';
-      uploadPlaceholder.style.display = 'flex';
-      removeBtn.style.display = 'none';
-      uploadArea.classList.remove('has-image');
-      imageInput.value = '';
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || `服务器错误 (${resp.status})`);
     }
 
+    const data = await resp.json();
+    resultUrl = data.image_url;
 
-    function fillAngle(angle) {
-      promptInput.value = angle;
-      promptInput.focus();
-      promptInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    // Show result
+    const wrap = document.getElementById('resultWrap');
+    wrap.innerHTML = `<img src="${resultUrl}" alt="角色设定图" style="width:100%;border-radius:10px">`;
 
-    function showStatus(msg, type) {
-      statusBar.textContent = msg;
-      statusBar.className = 'status-bar ' + (type || 'info');
-    }
+    const newBal = deductQuota();
+    updateQuotaUI();
 
-    function hideStatus() {
-      statusBar.className = 'status-bar';
-      statusBar.style.display = 'none';
-    }
+    document.getElementById('dlBtn').style.display = 'flex';
+    document.getElementById('modelInfo').style.display = 'block';
+    document.getElementById('modelName').textContent = data.model_used;
 
-    async function startGenerate() {
-      const prompt = promptInput.value.trim();
-      if (!prompt) { showStatus('请输入提示词', 'error'); return; }
-      if (!username) { showStatus('请先登录（关闭弹窗后重新打开）', 'error'); return; }
-      if (!uploadedImageUrl) { showStatus('请先上传参考图片', 'error'); return; }
+  } catch(e) {
+    showError('生成失败：' + (e.message || '请稍后再试'));
+    // Restore result wrap
+    document.getElementById('resultWrap').style.display = 'flex';
+  } finally {
+    setLoading(false);
+  }
+}
 
-      generateBtn.disabled = true;
-      btnText.style.display = 'none';
-      btnLoading.style.display = 'inline';
+function setLoading(loading) {
+  const btn = document.getElementById('genBtn');
+  const overlay = document.getElementById('loadingOverlay');
+  const wrap = document.getElementById('resultWrap');
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> 生成中，请稍候...';
+    overlay.classList.add('show');
+    wrap.style.display = 'none';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 生成多视角角色图`;
+    overlay.classList.remove('show');
+    wrap.style.display = 'flex';
+  }
+}
 
-      // Show loading state in results
-      resultsGrid.innerHTML = '<div class="loading-card" style="grid-column:1/-1"><div style="text-align:center"><div class="spinner"></div><p style="margin-top:12px;color:var(--text-muted);font-size:13px">正在生成图片，请耐心等待...</p><div class="progress-bar" style="margin-top:8px"><div class="progress-bar-inner"></div></div></div></div>';
-      downloadAllBtn.style.display = 'none';
-      generatedImages = [];
+// ========== 下载 ==========
+function downloadResult() {
+  if (!resultUrl) return;
+  const a = document.createElement('a');
+  a.href = resultUrl;
+  a.download = 'character_sheet.png';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 
-      try {
-        const modelKey = document.getElementById('modelSelect').value;
-        const body = {
-          prompt: prompt,
-          model: modelKey,
-          size: '16:9'
-        };
-        if (uploadedImageUrl) {
-          body.image_url = uploadedImageUrl;
-        }
+// ========== 错误提示 ==========
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = '⚠ ' + msg;
+  box.style.display = 'block';
+}
+function hideError() {
+  document.getElementById('errorBox').style.display = 'none';
+}
 
-        showStatus('正在生成图片，请耐心等待（通常需要10-30秒）。偶尔会失败，重新生成即可', 'info');
-
-        const resp = await fetch('/api/ai/wan/generate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : { 'X-Username': username })
-          },
-          body: JSON.stringify(body)
-        });
-
-        const data = await resp.json();
-        if (!resp.ok || data.error) {
-          throw new Error(typeof data.error === 'string' ? data.error : (data.error?.message || '生成失败'));
-        }
-
-        const images = data.images || [];
-        generatedImages = images;
-
-        if (images.length === 0) {
-          showStatus('生成完成但未返回图片', 'error');
-          resetBtn();
-          return;
-        }
-
-        // 更新用量顯示
-        if (data.models) {
-          wanUsage = { models: data.models };
-          updateUsageDisplay();
-        }
-
-        const currentModel = document.getElementById('modelSelect').value;
-        const modelInfo = wanUsage.models[currentModel];
-        showStatus('生成完成！' + modelInfo.label + '：剩余 ' + modelInfo.remaining + '/' + modelInfo.limit + ' 次', 'success');
-        resetBtn();
-        downloadAllBtn.style.display = 'block';
-
-        // Render results
-        resultsGrid.innerHTML = '';
-        images.forEach((url, idx) => {
-          const card = document.createElement('div');
-          card.className = 'result-card';
-          card.style.animationDelay = (idx * 0.1) + 's';
-          card.innerHTML = '<img src="' + url + '" alt="生成图片 ' + (idx+1) + '" loading="lazy" onclick="window.open(this.src)">' +
-            '<div class="card-actions"><button onclick="downloadImage(\'' + url + '\',' + (idx+1) + ')">下载</button><button onclick="window.open(\'' + url + '\')">查看原图</button></div>';
-          resultsGrid.appendChild(card);
-        });
-
-      } catch (err) {
-        showStatus('生成失败: ' + err.message, 'error');
-        resetBtn();
-        resultsGrid.innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>生成失败<br>' + err.message + '</p></div>';
-      }
-    }
-
-    async function startFourView() {
-      if (!uploadedImageUrl) { showStatus('请先上传参考图片', 'error'); return; }
-      if (!username) { showStatus('请先登录', 'error'); return; }
-      promptInput.value = '严格基于参考图片中的角色/物体，生成一张包含四个视角的图片。从左到右依次是：正面视角、3/4侧面视角、左侧面视角、背面视角。必须保持参考图片中的角色外观、服装、颜色、风格完全一致，仅改变拍摄角度。每个视角之间用竖线分隔，背景统一为白色。';
-      await startGenerate();
-    }
-
-    async function downloadImage(url, idx) {
-      try {
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'multiview_' + idx + '.png';
-        a.click();
-        URL.revokeObjectURL(a.href);
-      } catch (err) {
-        window.open(url, '_blank');
-      }
-    }
-
-    async function downloadAll() {
-      for (let i = 0; i < generatedImages.length; i++) {
-        await downloadImage(generatedImages[i], i + 1);
-        await new Promise(r => setTimeout(r, 500));
-      }
-    }
-
-    function resetBtn() {
-      generateBtn.disabled = false;
-      btnText.style.display = 'inline';
-      btnLoading.style.display = 'none';
-    }
-
-    // Load history
-    async function loadHistory() {
-      if (!username) return;
-      try {
-        const resp = await fetch('/api/ai/wan/history?limit=20', {
-          headers: authToken ? { 'X-Auth-Token': authToken, 'X-Username': username } : { 'X-Username': username }
-        });
-        const data = await resp.json();
-        renderHistory(data.records || []);
-      } catch (e) {
-        console.error('History load error:', e);
-      }
-    }
-
-    function renderHistory(records) {
-      const grid = document.getElementById('historyGrid');
-      if (!records.length) {
-        grid.innerHTML = '<div class="history-empty">暂无生成记录</div>';
-        return;
-      }
-      grid.innerHTML = records.map(r => {
-        const imgs = r.output_images || [];
-        const thumb = imgs[0] || '';
-        const time = new Date(r.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const safePrompt = (r.prompt || '').replace(/</g, '&lt;').replace(/'/g, '&#39;');
-        return '<div class="history-card" onclick="window.open(this.dataset.url)" data-url="' + thumb + '">' +
-          '<img src="' + thumb + '" alt="" loading="lazy">' +
-          '<div class="history-card-info">' +
-          '<div class="history-card-prompt">' + safePrompt + '</div>' +
-          '<div class="history-card-time">' + time + '</div>' +
-          '</div></div>';
-      }).join('');
-    }
-
-    loadHistory();
-  </script>
+// ========== 初始化 ==========
+updateQuotaUI();
+</script>
 </body>
 </html>
