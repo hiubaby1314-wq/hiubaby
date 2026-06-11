@@ -1,4 +1,3 @@
-
 /**
  * @license
  * Copyright 2025 Google LLC
@@ -7,32 +6,27 @@
 import 'dotenv/config';
 import express from 'express';
 import { GoogleAuth } from 'google-auth-library';
-import fetch from 'node-fetch';
+// Native fetch used (Node.js 22+)
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
 
-const PORT = process?.env?.API_BACKEND_PORT || 5000;
-const API_BACKEND_HOST = process?.env?.API_BACKEND_HOST || "127.0.0.1";
+const PORT = process?.env?.PORT || process?.env?.API_BACKEND_PORT || 3002;
+const API_BACKEND_HOST = process?.env?.API_BACKEND_HOST || "0.0.0.0";
 
 const GOOGLE_CLOUD_LOCATION = process?.env?.GOOGLE_CLOUD_LOCATION;
 const GOOGLE_CLOUD_PROJECT = process?.env?.GOOGLE_CLOUD_PROJECT;
 if (!GOOGLE_CLOUD_PROJECT || !GOOGLE_CLOUD_LOCATION) {
-  console.error("Error: Environment variables GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION must be set.");
-  process.exit(1);
+  console.warn("Warning: GOOGLE_CLOUD vars not set — Vertex AI proxy disabled.");
 }
-const PROXY_HEADER = process?.env?.PROXY_HEADER;
-if (!PROXY_HEADER) {
-  console.error("Error: Environment variables PROXY_HEADER must be set.");
-  process.exit(1);
-}
+const PROXY_HEADER = process?.env?.PROXY_HEADER || '';
 
 const MINIMAX_API_KEY = process?.env?.MINIMAX_API_KEY;
 const MINIMAX_GROUP_ID = process?.env?.MINIMAX_GROUP_ID;
 // 國際版使用 api.minimaxi.chat，中國版使用 api.minimax.chat
-const MINIMAX_API_BASE = process?.env?.MINIMAX_API_BASE || 'https://api.minimaxi.chat';
+const MINIMAX_API_BASE = process?.env?.MINIMAX_API_BASE || 'https://api.minimax.io';
 
 app.set('trust proxy', 1 /* number of proxies between user and server */);
 
@@ -49,7 +43,7 @@ app.post('/api/minimax-tts', async (req, res) => {
   }
 
   try {
-    const minimaxUrl = `${MINIMAX_API_BASE}/v1/t2a_v2?GroupId=${MINIMAX_GROUP_ID}`;
+    const minimaxUrl = `${MINIMAX_API_BASE}/v1/t2a_v2`;
     
     console.log(`[MiniMax] Sending TTS request to: ${minimaxUrl}`);
     console.log(`[MiniMax] Text length: ${text.length}, Voice: ${voice_id}`);
@@ -61,12 +55,17 @@ app.post('/api/minimax-tts', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'speech-01-hd',  // 使用 HD 模型，音質更好
+        model: 'speech-02-hd',  // 最新 HD 模型
         text: text,
-        voice_id: voice_id,
-        speed: speed || 1.0,
-        vol: 1.0,  // 音量 (0-10)
-        pitch: 0   // 音調 (-12 到 12)
+        stream: false,
+        voice_setting: {
+          voice_id: voice_id,
+          speed: parseFloat(speed) || 1.0,
+          vol: 1.0,
+          pitch: 0
+        },
+        audio_setting: { format: 'mp3', sample_rate: 32000 },
+        language_boost: 'Chinese'
       })
     });
 
@@ -91,20 +90,23 @@ app.post('/api/minimax-tts', async (req, res) => {
        });
     }
 
-    // T2A v2 API 返回格式：data.audio 為 base64 編碼的音頻數據
-    if (data.data && data.data.audio) {
-      const audioBase64 = data.data.audio.startsWith('data:') 
-        ? data.data.audio 
-        : `data:audio/wav;base64,${data.data.audio}`;
-      res.json({ audio_base64: audioBase64 });
-    } else if (data.audio) {
-      // 某些版本直接返回 audio 欄位
-      const audioBase64 = data.audio.startsWith('data:') 
-        ? data.audio 
-        : `data:audio/wav;base64,${data.audio}`;
+    // Handle audio response - api.minimax.io returns data.audio as hex-encoded MP3
+    const rawAudio = (data.data && data.data.audio) ? data.data.audio : data.audio;
+    if (rawAudio) {
+      let audioBase64;
+      // Check if it's hex (api.minimax.io format) or base64
+      if (/^[0-9a-f]{8,}/i.test(rawAudio) && !rawAudio.startsWith('data:') && !rawAudio.match(/[+/]/)) {
+        // Hex encoded MP3 from api.minimax.io
+        const buf = Buffer.from(rawAudio, 'hex');
+        audioBase64 = `data:audio/mp3;base64,${buf.toString('base64')}`;
+      } else if (rawAudio.startsWith('data:')) {
+        audioBase64 = rawAudio;
+      } else {
+        audioBase64 = `data:audio/mp3;base64,${rawAudio}`;
+      }
       res.json({ audio_base64: audioBase64 });
     } else {
-      console.error('Unexpected MiniMax response format:', JSON.stringify(data).substring(0, 500));
+      console.error('Unexpected MiniMax response:', JSON.stringify(data).substring(0, 500));
       res.status(500).json({ error: 'Unexpected response format from MiniMax' });
     }
 
@@ -112,6 +114,29 @@ app.post('/api/minimax-tts', async (req, res) => {
     console.error('Error in MiniMax proxy:', error);
     res.status(500).json({ error: 'Internal server error during TTS generation' });
   }
+});
+
+
+// System voices list (for voice selector UI)
+app.get('/api/system-voices', (req, res) => {
+  res.json({ ok: true, voices: [
+    { id: 'male-qn-qingse', name: '青澀青年', gender: 'male', tags: ['青年'] },
+    { id: 'male-qn-jingying', name: '精英青年', gender: 'male', tags: ['商務'] },
+    { id: 'male-qn-badao', name: '霸道青年', gender: 'male', tags: ['磁性'] },
+    { id: 'male-qn-daxuesheng', name: '青年大學生', gender: 'male', tags: ['活力'] },
+    { id: 'female-shaonv', name: '少女', gender: 'female', tags: ['甜美'] },
+    { id: 'female-yujie', name: '御姐', gender: 'female', tags: ['優雅'] },
+    { id: 'female-chengshu', name: '成熟女性', gender: 'female', tags: ['知性'] },
+    { id: 'female-tianmei', name: '甜美女性', gender: 'female', tags: ['可愛'] },
+    { id: 'presenter_male', name: '男性主持人', gender: 'male', tags: ['播音'] },
+    { id: 'presenter_female', name: '女性主持人', gender: 'female', tags: ['播音'] },
+    { id: 'audiobook_male_1', name: '男性有聲書1', gender: 'male', tags: ['有聲書'] },
+    { id: 'audiobook_female_1', name: '女性有聲書1', gender: 'female', tags: ['有聲書'] },
+    { id: 'male-qn-qingse-jingpin', name: '青澀青年精品', gender: 'male', tags: ['精品'] },
+    { id: 'female-shaonv-jingpin', name: '少女精品', gender: 'female', tags: ['精品'] },
+    { id: 'clever_boy', name: '聰明男童', gender: 'male', tags: ['兒童'] },
+    { id: 'lovely_girl', name: '萌萌女童', gender: 'female', tags: ['兒童'] },
+  ]});
 });
 
 // IMPORTANT: Vertex AI Studio Rate Limiting
@@ -547,5 +572,3 @@ server.on('upgrade', async (request, socket, head) => {
     socket.destroy();
   }
 });
-
-
